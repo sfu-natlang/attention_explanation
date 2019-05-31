@@ -20,7 +20,9 @@ from onmt.modules.copy_generator import collapse_copy_scores
 
 
 TOTAL_TOKENS = 0
-CHANGED_TOKENS = 0
+NOT_CHANGED_TOKENS_WITH_PERMUTE = 0
+NOT_CHANGED_TOKENS_WITH_ZERO = 0
+NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
@@ -413,7 +415,12 @@ class Translator(object):
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
 
         print("TOTAL_TOKENS:  %d" % (TOTAL_TOKENS))
-        print("CHANGED_TOKENS:  %d" % (CHANGED_TOKENS))
+        print("NOT_CHANGED_TOKENS_WITH_PERMUTE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE, NOT_CHANGED_TOKENS_WITH_PERMUTE / float(TOTAL_TOKENS)))
+        print("NOT_CHANGED_TOKENS_WITH_ZERO:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_ZERO / float(TOTAL_TOKENS)))
+        print("NOT CHANGED AT ALL:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO / float(TOTAL_TOKENS)))
+
+        ratio = (NOT_CHANGED_TOKENS_WITH_PERMUTE - NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO) / NOT_CHANGED_TOKENS_WITH_PERMUTE
+        print("Ratio of tokens that not changed with permute but changed with zero:  %f" % ratio)
 
         return all_scores, all_predictions
 
@@ -464,12 +471,14 @@ class Translator(object):
             self._exclusion_idxs, return_attention, self.max_length,
             sampling_temp, keep_topk, memory_lengths)
 
-        print("########################## START OF A BATCH #####################################")
         for step in range(max_length):
             # Shape: (1, B, 1)
             decoder_input = random_sampler.alive_seq[:, -1].view(1, -1, 1)
 
-            log_probs, attn, log_probs_permute_attention = self._decode_and_generate(
+            permute_attention = True
+            zero_out_attention = True
+
+            log_probs, attn, hack_dict = self._decode_and_generate(
                 decoder_input,
                 memory_bank,
                 batch,
@@ -478,38 +487,41 @@ class Translator(object):
                 src_map=src_map,
                 step=step,
                 batch_offset=random_sampler.select_indices,
-                permute_attention=True
+                permute_attention=permute_attention,
+                zero_out_attention=zero_out_attention
             )
 
             top_prob = torch.topk(log_probs, k=1, dim=1)
+
+
+            log_probs_permute_attention = hack_dict['log_probs_permute_attention']
+            log_probs_zero_out_attention = hack_dict['log_probs_zero_out_attention']
+
+
             top_prob_permute = torch.topk(log_probs_permute_attention, k=1, dim=1)
-            equality = (top_prob.indices == top_prob_permute.indices)
+            top_prob_zero = torch.topk(log_probs_zero_out_attention, k=1, dim=1)
+
+            equality_permute = (top_prob.indices == top_prob_permute.indices)
+            equality_zero = (top_prob.indices == top_prob_zero.indices)
+
+            not_changed_at_all = 0
+            equality_permute_cpu = equality_permute.cpu()
+            equality_zero_cpu = equality_zero.cpu()
+
+            for i in range(equality_permute.size()[0]):
+                if(equality_permute_cpu[i][0] == 1 and equality_zero_cpu[i][0] == 1):
+                    not_changed_at_all += 1
 
             global TOTAL_TOKENS
-            global CHANGED_TOKENS
+            global NOT_CHANGED_TOKENS_WITH_PERMUTE
+            global NOT_CHANGED_TOKENS_WITH_ZERO
+            global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
+
 
             TOTAL_TOKENS += top_prob.indices.size()[0]
-            CHANGED_TOKENS +=  (top_prob.indices.size()[0] - equality.sum(dim=0))
-
-            #print("is finished:  ")
-            #print(random_sampler.is_finished)
-            #print("size of log probs:  ")
-            #print(log_probs.size())
-            #print("total tokens:  %d" % top_prob.indices.size()[0])
-            #print("changed tokens:  %d" % (top_prob.indices.size()[0] - equality.sum(dim=0)))
-
-            #print("#"*40)
-            #print(top_prob.indices)
-            #print("-"*20)
-            #print(top_prob_permute.indices)
-            #print("-"*20)
-            #equality = (top_prob.indices == top_prob_permute.indices)
-            #print(equality)
-            #print("-"*20)
-            #print("total:  ")
-            #print(top_prob.indices.size()[0])
-            #print(equality.sum(dim=0))
-            #print("#"*40)
+            NOT_CHANGED_TOKENS_WITH_PERMUTE += equality_permute.sum(dim=0).cpu().numpy()[0]
+            NOT_CHANGED_TOKENS_WITH_ZERO += equality_zero.sum(dim=0).cpu().numpy()[0]
+            NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO += not_changed_at_all
 
             random_sampler.advance(log_probs, attn)
             any_batch_is_finished = random_sampler.is_finished.any()
@@ -588,7 +600,9 @@ class Translator(object):
             src_map=None,
             step=None,
             batch_offset=None,
-            permute_attention=False):
+            permute_attention=False,
+            zero_out_attention=False):
+
         if self.copy_attn:
             # Turn any copied words into UNKs.
             decoder_in = decoder_in.masked_fill(
@@ -606,8 +620,10 @@ class Translator(object):
         #print(before_state == self.model.decoder.state["hidden"])
 
         dec_out, dec_attn = self.model.decoder(
-            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention
+            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention
         )
+
+        hack_dict = {}
 
         # Generator forward.
         if not self.copy_attn:
@@ -619,7 +635,10 @@ class Translator(object):
             log_probs = self.model.generator(dec_out.squeeze(0))
 
             if permute_attention is True:
-                log_probs_permute_attention = self.model.generator(dec_attn["std_permute"][1].squeeze(0))
+                hack_dict['log_probs_permute_attention'] = self.model.generator(dec_attn["std_permute"][1].squeeze(0))
+
+            if zero_out_attention is True:
+                hack_dict['log_probs_zero_out_attention'] = self.model.generator(dec_attn["std_zero_out"][1].squeeze(0))
 
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
@@ -646,8 +665,8 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        if permute_attention is True:
-            return log_probs, attn, log_probs_permute_attention
+        if permute_attention is True or zero_out_attention is True:
+            return log_probs, attn, hack_dict
         else:
             return log_probs, attn
 

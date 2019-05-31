@@ -136,7 +136,7 @@ class GlobalAttention(nn.Module):
 
             return self.v(wquh.view(-1, dim)).view(tgt_batch, tgt_len, src_len)
 
-    def forward(self, source, memory_bank, memory_lengths=None, coverage=None, permute_attention=False):
+    def forward(self, source, memory_bank, memory_lengths=None, coverage=None, permute_attention=False, zero_out_attention=False):
         """
 
         Args:
@@ -152,6 +152,10 @@ class GlobalAttention(nn.Module):
           * Attention distribtutions for each query
             ``(tgt_len, batch, src_len)``
         """
+
+        if permute_attention is True and zero_out_attention is True:
+            print("Shit! permute_attention and zero_out_attention shouldn't be True at the same time")
+            assert False
 
         # one step input
         if source.dim() == 2:
@@ -248,5 +252,8 @@ class GlobalAttention(nn.Module):
             aeq(target_l, target_l_)
             aeq(batch, batch_)
             aeq(source_l, source_l_)
+
+        if zero_out_attention is True:
+            attn_h = torch.zeros(attn_h.size()).cuda()
 
         return attn_h, align_vectors
