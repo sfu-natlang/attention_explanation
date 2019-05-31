@@ -1,4 +1,6 @@
 """Global attention modules (Luong / Bahdanau)"""
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -201,7 +203,10 @@ class GlobalAttention(nn.Module):
 
             for i in range(align.size()[0]):
                 for j in range(align.size()[1]):
-                    np.random.shuffle(new_align[i][j])
+                    if memory_lengths is not None:
+                        random.shuffle(new_align[i][j][0:memory_lengths[i]])
+                    else:
+                        random.shuffle(new_align[i][j])
 
             align = torch.from_numpy(new_align).cuda()
 
