@@ -138,7 +138,7 @@ class GlobalAttention(nn.Module):
 
             return self.v(wquh.view(-1, dim)).view(tgt_batch, tgt_len, src_len)
 
-    def forward(self, source, memory_bank, memory_lengths=None, coverage=None, permute_attention=False, zero_out_attention=False):
+    def forward(self, source, memory_bank, memory_lengths=None, coverage=None, permute_attention=False, zero_out_attention=False, equal_weight=False):
         """
 
         Args:
@@ -155,7 +155,7 @@ class GlobalAttention(nn.Module):
             ``(tgt_len, batch, src_len)``
         """
 
-        if permute_attention is True and zero_out_attention is True:
+        if (permute_attention is True or equal_weight is True) and zero_out_attention is True:
             print("Shit! permute_attention and zero_out_attention shouldn't be True at the same time")
             assert False
 
@@ -198,15 +198,27 @@ class GlobalAttention(nn.Module):
         #print("Attended mostly to source position %d with attention value: %f" % (max_index, max_attention))
         #print("#"*20)
 
-        if permute_attention is True:
+        if permute_attention is True or equal_weight is True:
             new_align = align.clone().cpu().numpy()
 
             for i in range(align.size()[0]):
                 for j in range(align.size()[1]):
                     if memory_lengths is not None:
-                        random.shuffle(new_align[i][j][0:memory_lengths[i]])
+                        if permute_attention is True:
+                            random.shuffle(new_align[i][j][0:memory_lengths[i]])
+                        elif equal_weight is True:
+                            new_align[i][j][0:memory_lengths[i]] = 1
+                        else:
+                            print(">>> non of them is True <<<")
+                            assert False
                     else:
-                        random.shuffle(new_align[i][j])
+                        if permute_attention is True:
+                            random.shuffle(new_align[i][j])
+                        elif equal_weight is True:
+                            new_align[i][j][:] = 1
+                        else:
+                            print(">>> non of them is True <<<")
+                            assert False
 
             align = torch.from_numpy(new_align).cuda()
 

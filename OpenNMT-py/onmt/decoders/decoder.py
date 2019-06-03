@@ -191,7 +191,7 @@ class RNNDecoderBase(DecoderBase):
         self.state["hidden"] = tuple(h.detach() for h in self.state["hidden"])
         self.state["input_feed"] = self.state["input_feed"].detach()
 
-    def forward(self, tgt, memory_bank, memory_lengths=None, step=None, update_states=False, permute_attention=False, zero_out_attention=False):
+    def forward(self, tgt, memory_bank, memory_lengths=None, step=None, update_states=False, permute_attention=False, zero_out_attention=False, equal_weight_attention=False):
         """
         Args:
             tgt (LongTensor): sequences of padded tokens
@@ -211,7 +211,7 @@ class RNNDecoderBase(DecoderBase):
         """
 
         dec_state, dec_outs, attns = self._run_forward_pass(
-            tgt, memory_bank, memory_lengths=memory_lengths, permute_attention=permute_attention, zero_out_attention=zero_out_attention)
+            tgt, memory_bank, memory_lengths=memory_lengths, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention)
 
         # Update the state with the result.
         if not isinstance(dec_state, tuple):
@@ -256,7 +256,7 @@ class StdRNNDecoder(RNNDecoderBase):
     or `copy_attn` support.
     """
 
-    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, permute_attention=False, zero_out_attention=False):
+    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, permute_attention=False, zero_out_attention=False, equal_weight_attention=False):
         """
         Private helper for running the specific RNN forward pass.
         Must be overriden by all subclasses.
@@ -316,6 +316,16 @@ class StdRNNDecoder(RNNDecoderBase):
                 )
 
                 attns["std_permute"] = (p_attn_with_permute, dec_outs_with_permute) # hack (putting it in attns dictionary rather than returning extra argument but who fuckings cares?)
+
+            if equal_weight_attention is True:
+                dec_outs_with_equal_weight, p_attn_with_equal_weight = self.attn(
+                    rnn_output.transpose(0, 1).contiguous(),
+                    memory_bank.transpose(0, 1),
+                    memory_lengths=memory_lengths,
+                    equal_weight=True
+                )
+
+                attns["std_equal_weight"] = (p_attn_with_equal_weight, dec_outs_with_equal_weight)
 
             if zero_out_attention is True:
                 dec_outs_with_zero_out, p_attn_with_zero_out = self.attn(

@@ -23,6 +23,11 @@ TOTAL_TOKENS = 0
 NOT_CHANGED_TOKENS_WITH_PERMUTE = 0
 NOT_CHANGED_TOKENS_WITH_ZERO = 0
 NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
+NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
+
+permute_attention = False
+zero_out_attention = False
+equal_weight_attention = True
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
@@ -415,12 +420,21 @@ class Translator(object):
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
 
         print("TOTAL_TOKENS:  %d" % (TOTAL_TOKENS))
-        print("NOT_CHANGED_TOKENS_WITH_PERMUTE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE, NOT_CHANGED_TOKENS_WITH_PERMUTE / float(TOTAL_TOKENS)))
-        print("NOT_CHANGED_TOKENS_WITH_ZERO:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_ZERO / float(TOTAL_TOKENS)))
-        print("NOT CHANGED AT ALL:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO / float(TOTAL_TOKENS)))
 
-        ratio = (NOT_CHANGED_TOKENS_WITH_PERMUTE - NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO) / NOT_CHANGED_TOKENS_WITH_PERMUTE
-        print("Ratio of tokens that not changed with permute but changed with zero:  %f" % ratio)
+        if permute_attention is True:
+            print("NOT_CHANGED_TOKENS_WITH_PERMUTE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE, NOT_CHANGED_TOKENS_WITH_PERMUTE / float(TOTAL_TOKENS)))
+
+        if zero_out_attention is True:
+            print("NOT_CHANGED_TOKENS_WITH_ZERO:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_ZERO / float(TOTAL_TOKENS)))
+
+        if permute_attention is True and zero_out_attention is True:
+            print("NOT CHANGED AT ALL:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO / float(TOTAL_TOKENS)))
+
+            ratio = (NOT_CHANGED_TOKENS_WITH_PERMUTE - NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO) / NOT_CHANGED_TOKENS_WITH_PERMUTE
+            print("Ratio of tokens that not changed with permute but changed with zero:  %f" % ratio)
+
+        if equal_weight_attention is True:
+            print("NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT, NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT / float(TOTAL_TOKENS)))
 
         return all_scores, all_predictions
 
@@ -475,9 +489,6 @@ class Translator(object):
             # Shape: (1, B, 1)
             decoder_input = random_sampler.alive_seq[:, -1].view(1, -1, 1)
 
-            permute_attention = True
-            zero_out_attention = True
-
             log_probs, attn, hack_dict = self._decode_and_generate(
                 decoder_input,
                 memory_bank,
@@ -488,40 +499,53 @@ class Translator(object):
                 step=step,
                 batch_offset=random_sampler.select_indices,
                 permute_attention=permute_attention,
-                zero_out_attention=zero_out_attention
+                zero_out_attention=zero_out_attention,
+                equal_weight_attention=equal_weight_attention
             )
 
             top_prob = torch.topk(log_probs, k=1, dim=1)
 
 
-            log_probs_permute_attention = hack_dict['log_probs_permute_attention']
-            log_probs_zero_out_attention = hack_dict['log_probs_zero_out_attention']
-
-
-            top_prob_permute = torch.topk(log_probs_permute_attention, k=1, dim=1)
-            top_prob_zero = torch.topk(log_probs_zero_out_attention, k=1, dim=1)
-
-            equality_permute = (top_prob.indices == top_prob_permute.indices)
-            equality_zero = (top_prob.indices == top_prob_zero.indices)
-
-            not_changed_at_all = 0
-            equality_permute_cpu = equality_permute.cpu()
-            equality_zero_cpu = equality_zero.cpu()
-
-            for i in range(equality_permute.size()[0]):
-                if(equality_permute_cpu[i][0] == 1 and equality_zero_cpu[i][0] == 1):
-                    not_changed_at_all += 1
-
             global TOTAL_TOKENS
             global NOT_CHANGED_TOKENS_WITH_PERMUTE
             global NOT_CHANGED_TOKENS_WITH_ZERO
+            global NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT
             global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
 
 
             TOTAL_TOKENS += top_prob.indices.size()[0]
-            NOT_CHANGED_TOKENS_WITH_PERMUTE += equality_permute.sum(dim=0).cpu().numpy()[0]
-            NOT_CHANGED_TOKENS_WITH_ZERO += equality_zero.sum(dim=0).cpu().numpy()[0]
-            NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO += not_changed_at_all
+
+            if permute_attention is True:
+                log_probs_permute_attention = hack_dict['log_probs_permute_attention']
+                top_prob_permute = torch.topk(log_probs_permute_attention, k=1, dim=1)
+                equality_permute = (top_prob.indices == top_prob_permute.indices)
+                equality_permute_cpu = equality_permute.cpu()
+
+                NOT_CHANGED_TOKENS_WITH_PERMUTE += equality_permute.sum(dim=0).cpu().numpy()[0]
+
+            if zero_out_attention is True:
+                log_probs_zero_out_attention = hack_dict['log_probs_zero_out_attention']
+                top_prob_zero = torch.topk(log_probs_zero_out_attention, k=1, dim=1)
+                equality_zero = (top_prob.indices == top_prob_zero.indices)
+                equality_zero_cpu = equality_zero.cpu()
+
+                NOT_CHANGED_TOKENS_WITH_ZERO += equality_zero.sum(dim=0).cpu().numpy()[0]
+
+            if permute_attention is True and zero_out_attention is True:
+                not_changed_at_all = 0
+                for i in range(equality_permute.size()[0]):
+                    if(equality_permute_cpu[i][0] == 1 and equality_zero_cpu[i][0] == 1):
+                        not_changed_at_all += 1
+
+                NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO += not_changed_at_all
+
+            if equal_weight_attention is True:
+                log_probs_equal_weight_attention = hack_dict['log_probs_equal_weight_attention']
+                top_prob_equal_weight = torch.topk(log_probs_equal_weight_attention, k=1, dim=1)
+                equality_equal_weight = (top_prob.indices == top_prob_equal_weight.indices)
+                equality_equal_weight = equality_equal_weight.cpu()
+
+                NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT += equality_equal_weight.sum(dim=0).cpu().numpy()[0]
 
             random_sampler.advance(log_probs, attn)
             any_batch_is_finished = random_sampler.is_finished.any()
@@ -601,7 +625,8 @@ class Translator(object):
             step=None,
             batch_offset=None,
             permute_attention=False,
-            zero_out_attention=False):
+            zero_out_attention=False,
+            equal_weight_attention=False):
 
         if self.copy_attn:
             # Turn any copied words into UNKs.
@@ -620,7 +645,7 @@ class Translator(object):
         #print(before_state == self.model.decoder.state["hidden"])
 
         dec_out, dec_attn = self.model.decoder(
-            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention
+            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention
         )
 
         hack_dict = {}
@@ -639,6 +664,9 @@ class Translator(object):
 
             if zero_out_attention is True:
                 hack_dict['log_probs_zero_out_attention'] = self.model.generator(dec_attn["std_zero_out"][1].squeeze(0))
+
+            if equal_weight_attention is True:
+                hack_dict['log_probs_equal_weight_attention'] = self.model.generator(dec_attn["std_equal_weight"][1].squeeze(0))
 
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
@@ -665,7 +693,7 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        if permute_attention is True or zero_out_attention is True:
+        if permute_attention is True or zero_out_attention is True or equal_weight_attention is True:
             return log_probs, attn, hack_dict
         else:
             return log_probs, attn
