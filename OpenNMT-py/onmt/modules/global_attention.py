@@ -138,7 +138,7 @@ class GlobalAttention(nn.Module):
 
             return self.v(wquh.view(-1, dim)).view(tgt_batch, tgt_len, src_len)
 
-    def forward(self, source, memory_bank, memory_lengths=None, coverage=None, permute_attention=False, zero_out_attention=False, equal_weight=False):
+    def forward(self, source, memory_bank, memory_lengths=None, coverage=None, experiment_type=None):
         """
 
         Args:
@@ -146,7 +146,7 @@ class GlobalAttention(nn.Module):
           memory_bank (FloatTensor): source vectors ``(batch, src_len, dim)``
           memory_lengths (LongTensor): the source context lengths ``(batch,)``
           coverage (FloatTensor): None (not supported yet)
-
+          experiment_type : Type of experiment. Possible values: permute, zero_out, equal_weight, last_state
         Returns:
           (FloatTensor, FloatTensor):
 
@@ -154,10 +154,6 @@ class GlobalAttention(nn.Module):
           * Attention distribtutions for each query
             ``(tgt_len, batch, src_len)``
         """
-
-        if (permute_attention is True or equal_weight is True) and zero_out_attention is True:
-            print("Shit! permute_attention and zero_out_attention shouldn't be True at the same time")
-            assert False
 
         # one step input
         if source.dim() == 2:
@@ -198,27 +194,23 @@ class GlobalAttention(nn.Module):
         #print("Attended mostly to source position %d with attention value: %f" % (max_index, max_attention))
         #print("#"*20)
 
-        if permute_attention is True or equal_weight is True:
+        if experiment_type is not None and experiment_type != 'zero_out':
             new_align = align.clone().cpu().numpy()
 
             for i in range(align.size()[0]):
+                length = memory_lengths[i] if memory_lengths is not None else new_align[i][j].size()[0]
+
                 for j in range(align.size()[1]):
-                    if memory_lengths is not None:
-                        if permute_attention is True:
-                            random.shuffle(new_align[i][j][0:memory_lengths[i]])
-                        elif equal_weight is True:
-                            new_align[i][j][0:memory_lengths[i]] = 1
-                        else:
-                            print(">>> non of them is True <<<")
-                            assert False
+                    if experiment_type == 'permute':
+                        random.shuffle(new_align[i][j][0:length])
+                    elif experiment_type == 'equal_weight':
+                        new_align[i][j][0:length] = 1
+                    elif experiment_type == 'last_state':
+                        new_align[i][j][0:length] = -float('inf')
+                        new_align[i][j][length-1] = 1
                     else:
-                        if permute_attention is True:
-                            random.shuffle(new_align[i][j])
-                        elif equal_weight is True:
-                            new_align[i][j][:] = 1
-                        else:
-                            print(">>> non of them is True <<<")
-                            assert False
+                        print(">>> non of them is True <<<")
+                        assert False
 
             align = torch.from_numpy(new_align).cuda()
 
@@ -270,7 +262,7 @@ class GlobalAttention(nn.Module):
             aeq(batch, batch_)
             aeq(source_l, source_l_)
 
-        if zero_out_attention is True:
+        if experiment_type == 'zero_out':
             attn_h = torch.zeros(attn_h.size()).cuda()
 
         return attn_h, align_vectors

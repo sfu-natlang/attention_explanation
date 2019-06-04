@@ -24,10 +24,12 @@ NOT_CHANGED_TOKENS_WITH_PERMUTE = 0
 NOT_CHANGED_TOKENS_WITH_ZERO = 0
 NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
 NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
+NOT_CHANGED_TOKENS_WITH_LAST_STATE = 0
 
 permute_attention = False
 zero_out_attention = False
-equal_weight_attention = True
+equal_weight_attention = False
+last_state_attention = True
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
@@ -436,6 +438,9 @@ class Translator(object):
         if equal_weight_attention is True:
             print("NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT, NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT / float(TOTAL_TOKENS)))
 
+        if last_state_attention is True:
+            print("NOT_CHANGED_TOKENS_WITH_LAST_STATE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_LAST_STATE, NOT_CHANGED_TOKENS_WITH_LAST_STATE / float(TOTAL_TOKENS)))
+
         return all_scores, all_predictions
 
     def _translate_random_sampling(
@@ -500,7 +505,8 @@ class Translator(object):
                 batch_offset=random_sampler.select_indices,
                 permute_attention=permute_attention,
                 zero_out_attention=zero_out_attention,
-                equal_weight_attention=equal_weight_attention
+                equal_weight_attention=equal_weight_attention,
+                last_state_attention=last_state_attention
             )
 
             top_prob = torch.topk(log_probs, k=1, dim=1)
@@ -510,6 +516,7 @@ class Translator(object):
             global NOT_CHANGED_TOKENS_WITH_PERMUTE
             global NOT_CHANGED_TOKENS_WITH_ZERO
             global NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT
+            global NOT_CHANGED_TOKENS_WITH_LAST_STATE
             global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
 
 
@@ -546,6 +553,16 @@ class Translator(object):
                 equality_equal_weight = equality_equal_weight.cpu()
 
                 NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT += equality_equal_weight.sum(dim=0).cpu().numpy()[0]
+
+            if last_state_attention is True:
+                log_probs_last_state_attention = hack_dict['log_probs_last_state_attention']
+                top_prob_last_state = torch.topk(log_probs_last_state_attention, k=1, dim=1)
+                equality_last_state = (top_prob.indices == top_prob_last_state.indices)
+                equality_last_state = equality_last_state.cpu()
+
+                NOT_CHANGED_TOKENS_WITH_LAST_STATE += equality_last_state.sum(dim=0).cpu().numpy()[0]
+
+
 
             random_sampler.advance(log_probs, attn)
             any_batch_is_finished = random_sampler.is_finished.any()
@@ -626,7 +643,8 @@ class Translator(object):
             batch_offset=None,
             permute_attention=False,
             zero_out_attention=False,
-            equal_weight_attention=False):
+            equal_weight_attention=False,
+            last_state_attention=False):
 
         if self.copy_attn:
             # Turn any copied words into UNKs.
@@ -645,7 +663,8 @@ class Translator(object):
         #print(before_state == self.model.decoder.state["hidden"])
 
         dec_out, dec_attn = self.model.decoder(
-            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention
+            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention,
+            last_state_attention=last_state_attention
         )
 
         hack_dict = {}
@@ -667,6 +686,9 @@ class Translator(object):
 
             if equal_weight_attention is True:
                 hack_dict['log_probs_equal_weight_attention'] = self.model.generator(dec_attn["std_equal_weight"][1].squeeze(0))
+
+            if last_state_attention is True:
+                hack_dict['log_probs_last_state_attention'] = self.model.generator(dec_attn["std_last_state"][1].squeeze(0))
 
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
@@ -693,7 +715,7 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        if permute_attention is True or zero_out_attention is True or equal_weight_attention is True:
+        if any([permute_attention, zero_out_attention, equal_weight_attention, last_state_attention]):
             return log_probs, attn, hack_dict
         else:
             return log_probs, attn
