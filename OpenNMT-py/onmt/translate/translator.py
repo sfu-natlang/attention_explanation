@@ -6,6 +6,7 @@ import os
 import math
 import time
 from itertools import count
+from collections import defaultdict, Counter
 
 import torch
 
@@ -26,10 +27,13 @@ NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
 NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
 NOT_CHANGED_TOKENS_WITH_LAST_STATE = 0
 
-permute_attention = False
-zero_out_attention = False
+permute_attention = True
+zero_out_attention = True
 equal_weight_attention = False
-last_state_attention = True
+last_state_attention = False
+
+#not_changed_tokens_at_all_dict = defaultdict(int)
+not_changed_tokens_permute_dict = defaultdict(int)
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
@@ -426,6 +430,10 @@ class Translator(object):
         if permute_attention is True:
             print("NOT_CHANGED_TOKENS_WITH_PERMUTE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE, NOT_CHANGED_TOKENS_WITH_PERMUTE / float(TOTAL_TOKENS)))
 
+            print("dict:  ")
+            d = Counter(not_changed_tokens_permute_dict)
+            print(d.most_common(n=100))
+
         if zero_out_attention is True:
             print("NOT_CHANGED_TOKENS_WITH_ZERO:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_ZERO / float(TOTAL_TOKENS)))
 
@@ -518,9 +526,12 @@ class Translator(object):
             global NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT
             global NOT_CHANGED_TOKENS_WITH_LAST_STATE
             global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
-
+            global not_changed_tokens_permute_dict
 
             TOTAL_TOKENS += top_prob.indices.size()[0]
+
+            tgt_field = dict(self.fields)["tgt"].base_field
+            vocab = tgt_field.vocab
 
             if permute_attention is True:
                 log_probs_permute_attention = hack_dict['log_probs_permute_attention']
@@ -529,6 +540,10 @@ class Translator(object):
                 equality_permute_cpu = equality_permute.cpu()
 
                 NOT_CHANGED_TOKENS_WITH_PERMUTE += equality_permute.sum(dim=0).cpu().numpy()[0]
+
+                for i in range(equality_permute.size()[0]):
+                    if(equality_permute_cpu[i][0] == 1):
+                        not_changed_tokens_permute_dict[vocab.itos[top_prob.indices[i][0]]] += 1
 
             if zero_out_attention is True:
                 log_probs_zero_out_attention = hack_dict['log_probs_zero_out_attention']
@@ -545,6 +560,8 @@ class Translator(object):
                         not_changed_at_all += 1
 
                 NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO += not_changed_at_all
+
+
 
             if equal_weight_attention is True:
                 log_probs_equal_weight_attention = hack_dict['log_probs_equal_weight_attention']
