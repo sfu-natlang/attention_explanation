@@ -28,12 +28,13 @@ NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
 NOT_CHANGED_TOKENS_WITH_LAST_STATE = 0
 
 permute_attention = True
-zero_out_attention = True
+zero_out_attention = False
 equal_weight_attention = False
 last_state_attention = False
 
 #not_changed_tokens_at_all_dict = defaultdict(int)
 not_changed_tokens_permute_dict = defaultdict(int)
+not_changed_tokens_equal_weight_dict = defaultdict(int)
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
@@ -446,6 +447,10 @@ class Translator(object):
         if equal_weight_attention is True:
             print("NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT, NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT / float(TOTAL_TOKENS)))
 
+            print("dict:  ")
+            d = Counter(not_changed_tokens_equal_weight_dict)
+            print(d.most_common(n=100))
+
         if last_state_attention is True:
             print("NOT_CHANGED_TOKENS_WITH_LAST_STATE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_LAST_STATE, NOT_CHANGED_TOKENS_WITH_LAST_STATE / float(TOTAL_TOKENS)))
 
@@ -527,6 +532,7 @@ class Translator(object):
             global NOT_CHANGED_TOKENS_WITH_LAST_STATE
             global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
             global not_changed_tokens_permute_dict
+            global not_changed_tokens_equal_weight_dict
 
             TOTAL_TOKENS += top_prob.indices.size()[0]
 
@@ -567,9 +573,14 @@ class Translator(object):
                 log_probs_equal_weight_attention = hack_dict['log_probs_equal_weight_attention']
                 top_prob_equal_weight = torch.topk(log_probs_equal_weight_attention, k=1, dim=1)
                 equality_equal_weight = (top_prob.indices == top_prob_equal_weight.indices)
-                equality_equal_weight = equality_equal_weight.cpu()
+                equality_equal_weight_cpu = equality_equal_weight.cpu()
 
                 NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT += equality_equal_weight.sum(dim=0).cpu().numpy()[0]
+
+                for i in range(equality_equal_weight.size()[0]):
+                    if(equality_equal_weight_cpu[i][0] == 1):
+                        not_changed_tokens_equal_weight_dict[vocab.itos[top_prob.indices[i][0]]] += 1
+
 
             if last_state_attention is True:
                 log_probs_last_state_attention = hack_dict['log_probs_last_state_attention']
