@@ -16,7 +16,8 @@ import onmt.inputters as inputters
 import onmt.decoders.ensemble
 from onmt.translate.beam_search import BeamSearch
 from onmt.translate.random_sampling import RandomSampling
-from onmt.utils.misc import tile, set_random_seed
+from onmt.utils.misc import tile, set_random_seed, tvd, high_distance
+from onmt.utils.plotting import *
 from onmt.modules.copy_generator import collapse_copy_scores
 
 
@@ -27,14 +28,17 @@ NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
 NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
 NOT_CHANGED_TOKENS_WITH_LAST_STATE = 0
 
-permute_attention = True
+permute_attention = False
 zero_out_attention = False
 equal_weight_attention = False
 last_state_attention = False
+tvd_permute = True
 
 #not_changed_tokens_at_all_dict = defaultdict(int)
 not_changed_tokens_permute_dict = defaultdict(int)
 not_changed_tokens_equal_weight_dict = defaultdict(int)
+
+max_att_dist_change_pairs = []
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
@@ -454,6 +458,22 @@ class Translator(object):
         if last_state_attention is True:
             print("NOT_CHANGED_TOKENS_WITH_LAST_STATE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_LAST_STATE, NOT_CHANGED_TOKENS_WITH_LAST_STATE / float(TOTAL_TOKENS)))
 
+        if tvd_permute is True:
+            fig, ax = init_gridspec(3, 3, 1)
+
+            max_attn = [el[0] for el in max_att_dist_change_pairs]
+            med_diff = [el[1] for el in max_att_dist_change_pairs]
+            yhat = [0] * len(max_attn)
+
+            plot_violin_by_class(ax[0], max_attn, med_diff, yhat, xlim=(0, 1.0))
+            annotate(ax[0], xlim=(-0.05, 1.05), ylabel="Max attention", xlabel="Median Output Difference", legend=None)
+
+            adjust_gridspec()
+            save_axis_in_file(fig, ax[0], "/cs/natlang-expts/pooya/attention_explanation/plots", "tvd_permutation")
+            show_gridspec()
+
+            print("len:  %d", len(max_att_dist_change_pairs))
+
         return all_scores, all_predictions
 
     def _translate_random_sampling(
@@ -519,7 +539,8 @@ class Translator(object):
                 permute_attention=permute_attention,
                 zero_out_attention=zero_out_attention,
                 equal_weight_attention=equal_weight_attention,
-                last_state_attention=last_state_attention
+                last_state_attention=last_state_attention,
+                tvd_permute=tvd_permute
             )
 
             top_prob = torch.topk(log_probs, k=1, dim=1)
@@ -533,6 +554,7 @@ class Translator(object):
             global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
             global not_changed_tokens_permute_dict
             global not_changed_tokens_equal_weight_dict
+            global max_att_dist_change_pairs
 
             TOTAL_TOKENS += top_prob.indices.size()[0]
 
@@ -567,8 +589,6 @@ class Translator(object):
 
                 NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO += not_changed_at_all
 
-
-
             if equal_weight_attention is True:
                 log_probs_equal_weight_attention = hack_dict['log_probs_equal_weight_attention']
                 top_prob_equal_weight = torch.topk(log_probs_equal_weight_attention, k=1, dim=1)
@@ -581,7 +601,6 @@ class Translator(object):
                     if(equality_equal_weight_cpu[i][0] == 1):
                         not_changed_tokens_equal_weight_dict[vocab.itos[top_prob.indices[i][0]]] += 1
 
-
             if last_state_attention is True:
                 log_probs_last_state_attention = hack_dict['log_probs_last_state_attention']
                 top_prob_last_state = torch.topk(log_probs_last_state_attention, k=1, dim=1)
@@ -590,6 +609,16 @@ class Translator(object):
 
                 NOT_CHANGED_TOKENS_WITH_LAST_STATE += equality_last_state.sum(dim=0).cpu().numpy()[0]
 
+            if tvd_permute is True:
+                max_attention = hack_dict['tvd_max_attention'].cpu()
+                dist_change_median = hack_dict['tvd_dist_change_median'].cpu()
+
+                assert (len(max_attention.size()) == 1)
+                assert (len(dist_change_median.size()) == 1)
+                assert (max_attention.size()[0] == dist_change_median.size()[0])
+
+                for i in range(max_attention.size()[0]):
+                    max_att_dist_change_pairs.append((float(max_attention[i].cpu()), float(dist_change_median[i].cpu())))
 
 
             random_sampler.advance(log_probs, attn)
@@ -672,7 +701,8 @@ class Translator(object):
             permute_attention=False,
             zero_out_attention=False,
             equal_weight_attention=False,
-            last_state_attention=False):
+            last_state_attention=False,
+            tvd_permute=False):
 
         if self.copy_attn:
             # Turn any copied words into UNKs.
@@ -692,7 +722,7 @@ class Translator(object):
 
         dec_out, dec_attn = self.model.decoder(
             decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention,
-            last_state_attention=last_state_attention
+            last_state_attention=last_state_attention, tvd_permute=tvd_permute
         )
 
         hack_dict = {}
@@ -717,6 +747,28 @@ class Translator(object):
 
             if last_state_attention is True:
                 hack_dict['log_probs_last_state_attention'] = self.model.generator(dec_attn["std_last_state"][1].squeeze(0))
+
+            if tvd_permute is True:
+                dec_outs = dec_attn["std_tvd_permute"]
+                distances = []
+                for my_dec_out in dec_outs:
+                    my_dec_out = my_dec_out.squeeze(0)
+                    my_log_prob = self.model.generator(my_dec_out)
+
+                    #distance = tvd(torch.exp(log_probs), torch.exp(my_log_prob))
+                    distance = high_distance(torch.exp(log_probs), torch.exp(my_log_prob))[0]
+                    distances.append(distance)
+
+                dist_change_median = torch.median(torch.stack(distances), dim=0).values
+
+                if attn.size()[0] != 1:
+                    print(">>>> Shit! Target length in attention is more than 1 <<<<")
+                    assert False
+
+                max_attention = attn[0].max(dim=1).values
+
+                hack_dict['tvd_dist_change_median'] = dist_change_median
+                hack_dict['tvd_max_attention'] = max_attention
 
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
@@ -743,7 +795,7 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        if any([permute_attention, zero_out_attention, equal_weight_attention, last_state_attention]):
+        if any([permute_attention, zero_out_attention, equal_weight_attention, last_state_attention, tvd_permute]):
             return log_probs, attn, hack_dict
         else:
             return log_probs, attn

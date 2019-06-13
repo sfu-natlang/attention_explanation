@@ -124,3 +124,14 @@ def relative_matmul(x, z, transpose):
 def fn_args(fun):
     """Returns the list of function arguments name."""
     return inspect.getfullargspec(fun).args
+
+
+def tvd(dist_1, dist_2):
+    return (dist_1 - dist_2).abs().mean(1)
+
+
+def high_distance(dist_before, dist_after):
+    max_values_before, max_indices_before = dist_before.max(1)
+    values_after = dist_after.gather(1, max_indices_before.view(-1,1)).t()
+
+    return (max_values_before - values_after).abs()

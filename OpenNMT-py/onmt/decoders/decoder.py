@@ -191,7 +191,7 @@ class RNNDecoderBase(DecoderBase):
         self.state["hidden"] = tuple(h.detach() for h in self.state["hidden"])
         self.state["input_feed"] = self.state["input_feed"].detach()
 
-    def forward(self, tgt, memory_bank, memory_lengths=None, step=None, update_states=False, permute_attention=False, zero_out_attention=False, equal_weight_attention=False, last_state_attention=False):
+    def forward(self, tgt, memory_bank, memory_lengths=None, step=None, update_states=False, permute_attention=False, zero_out_attention=False, equal_weight_attention=False, last_state_attention=False, tvd_permute=False):
         """
         Args:
             tgt (LongTensor): sequences of padded tokens
@@ -211,7 +211,7 @@ class RNNDecoderBase(DecoderBase):
         """
 
         dec_state, dec_outs, attns = self._run_forward_pass(
-            tgt, memory_bank, memory_lengths=memory_lengths, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention, last_state_attention=last_state_attention)
+            tgt, memory_bank, memory_lengths=memory_lengths, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention, last_state_attention=last_state_attention, tvd_permute=tvd_permute)
 
         # Update the state with the result.
         if not isinstance(dec_state, tuple):
@@ -256,7 +256,7 @@ class StdRNNDecoder(RNNDecoderBase):
     or `copy_attn` support.
     """
 
-    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, permute_attention=False, zero_out_attention=False, equal_weight_attention=False, last_state_attention=False):
+    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, permute_attention=False, zero_out_attention=False, equal_weight_attention=False, last_state_attention=False, tvd_permute=False):
         """
         Private helper for running the specific RNN forward pass.
         Must be overriden by all subclasses.
@@ -346,6 +346,20 @@ class StdRNNDecoder(RNNDecoderBase):
                 )
 
                 attns["std_last_state"] = (p_attn_with_last_state, dec_outs_with_last_state)
+
+            if tvd_permute is True:
+                my_dec_outs = []
+                for i in range(100):
+                    dec_outs_with_permute, p_attn_with_permute = self.attn(
+                        rnn_output.transpose(0, 1).contiguous(),
+                        memory_bank.transpose(0, 1),
+                        memory_lengths=memory_lengths,
+                        experiment_type='permute'
+                    )
+
+                    my_dec_outs.append(dec_outs_with_permute)
+
+                attns["std_tvd_permute"] = my_dec_outs
 
 
         # Calculate the context gate.

@@ -107,7 +107,6 @@ class GlobalAttention(nn.Module):
           FloatTensor: raw attention scores (unnormalized) for each src index
             ``(batch, tgt_len, src_len)``
         """
-
         # Check input sizes
         src_batch, src_len, src_dim = h_s.size()
         tgt_batch, tgt_len, tgt_dim = h_t.size()
@@ -154,7 +153,6 @@ class GlobalAttention(nn.Module):
           * Attention distribtutions for each query
             ``(tgt_len, batch, src_len)``
         """
-
         # one step input
         if source.dim() == 2:
             one_step = True
