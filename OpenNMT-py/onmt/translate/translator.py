@@ -205,6 +205,10 @@ class Translator(object):
 
         set_random_seed(seed, self._use_cuda)
 
+
+        # For attention explanation experiments
+        self.tvd_tokens = defaultdict(int) # max_attention > 0.5 and change prob < 0.2
+
     @classmethod
     def from_opt(
             cls,
@@ -459,6 +463,13 @@ class Translator(object):
             print("NOT_CHANGED_TOKENS_WITH_LAST_STATE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_LAST_STATE, NOT_CHANGED_TOKENS_WITH_LAST_STATE / float(TOTAL_TOKENS)))
 
         if tvd_permute is True:
+            print("dict:  ")
+            d = Counter(self.tvd_tokens)
+            print(d.most_common(n=100))
+
+            print("sum:  ")
+            print(sum(self.tvd_tokens.values()))
+
             fig, ax = init_gridspec(3, 3, 1)
 
             max_attn = [el[0] for el in max_att_dist_change_pairs]
@@ -612,6 +623,10 @@ class Translator(object):
             if tvd_permute is True:
                 max_attention = hack_dict['tvd_max_attention'].cpu()
                 dist_change_median = hack_dict['tvd_dist_change_median'].cpu()
+
+                for i in range(top_prob.indices.size()[0]):
+                    if(max_attention[i] > 0.5 and dist_change_median[i] < 0.2):
+                        self.tvd_tokens[vocab.itos[top_prob.indices[i][0]]] += 1
 
                 assert (len(max_attention.size()) == 1)
                 assert (len(dist_change_median.size()) == 1)
