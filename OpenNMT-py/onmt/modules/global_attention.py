@@ -192,6 +192,10 @@ class GlobalAttention(nn.Module):
         #print("Attended mostly to source position %d with attention value: %f" % (max_index, max_attention))
         #print("#"*20)
 
+        # i is batch index, j is target token index, third dimension is for source token index
+
+        assert (align.size()[1] == 1)
+
         if experiment_type is not None and experiment_type != 'zero_out':
             new_align = align.clone().cpu().numpy()
 
@@ -206,6 +210,10 @@ class GlobalAttention(nn.Module):
                     elif experiment_type == 'last_state':
                         new_align[i][j][0:length] = -float('inf')
                         new_align[i][j][length-1] = 1
+                    elif experiment_type == 'keep_max_zero_out_other':
+                        max_index = new_align[i][j][0:length].argmax()
+                        new_align[i][j][0:length] = -float('inf')
+                        new_align[i][j][max_index] = 1
                     else:
                         print(">>> non of them is True <<<")
                         assert False
