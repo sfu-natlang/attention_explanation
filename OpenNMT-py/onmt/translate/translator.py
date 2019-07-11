@@ -28,18 +28,22 @@ NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
 NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
 NOT_CHANGED_TOKENS_WITH_LAST_STATE = 0
 NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER = 0
+NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER = 0
 
 permute_attention = False
 zero_out_attention = False
 equal_weight_attention = False
 last_state_attention = False
 tvd_permute = False
-keep_max_zero_out_other = True
+keep_max_zero_out_other = False
+keep_max_uniform_other = True # Max will be set to 2 (rather than keeping it's actual value)
+
 
 #not_changed_tokens_at_all_dict = defaultdict(int)
 not_changed_tokens_permute_dict = defaultdict(int)
 not_changed_tokens_equal_weight_dict = defaultdict(int)
 not_changed_tokens_keep_max_zero_out_other_dict = defaultdict(int)
+not_changed_tokens_keep_max_uniform_other_dict = defaultdict(int)
 
 max_att_dist_change_pairs = []
 
@@ -472,6 +476,12 @@ class Translator(object):
             d = Counter(not_changed_tokens_keep_max_zero_out_other_dict)
             print(d.most_common(n=200))
 
+        if keep_max_uniform_other:
+            print("NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER, NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER / float(TOTAL_TOKENS)))
+
+            print("dict:  ")
+            d = Counter(not_changed_tokens_keep_max_uniform_other_dict)
+            print(d.most_common(n=200))
 
         if tvd_permute is True:
             print("dict:  ")
@@ -563,7 +573,8 @@ class Translator(object):
                 equal_weight_attention=equal_weight_attention,
                 last_state_attention=last_state_attention,
                 tvd_permute=tvd_permute,
-                keep_max_zero_out_other=keep_max_zero_out_other
+                keep_max_zero_out_other=keep_max_zero_out_other,
+                keep_max_uniform_other=keep_max_uniform_other,
             )
 
             top_prob = torch.topk(log_probs, k=1, dim=1)
@@ -581,6 +592,9 @@ class Translator(object):
 
             global NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER
             global not_changed_tokens_keep_max_zero_out_other_dict
+
+            global NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER
+            global not_changed_tokens_keep_max_uniform_other_dict
 
             TOTAL_TOKENS += top_prob.indices.size()[0]
 
@@ -645,6 +659,17 @@ class Translator(object):
                     if(equality_keep_max_zero_out_other_cpu[i][0] == 1):
                         not_changed_tokens_keep_max_zero_out_other_dict[vocab.itos[top_prob.indices[i][0]]] += 1
 
+            if keep_max_uniform_other is True:
+                log_probs_keep_max_uniform_other_attention = hack_dict['log_probs_keep_max_uniform_other_attention']
+                top_prob_keep_max_uniform_other = torch.topk(log_probs_keep_max_uniform_other_attention, k=1, dim=1)
+                equality_keep_max_uniform_other = (top_prob.indices == top_prob_keep_max_uniform_other.indices)
+                equality_keep_max_uniform_other_cpu = equality_keep_max_uniform_other.cpu()
+
+                NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER += equality_keep_max_uniform_other.sum(dim=0).cpu().numpy()[0]
+
+                for i in range(equality_keep_max_uniform_other.size()[0]):
+                    if(equality_keep_max_uniform_other_cpu[i][0] == 1):
+                        not_changed_tokens_keep_max_uniform_other_dict[vocab.itos[top_prob.indices[i][0]]] += 1
 
 
             if tvd_permute is True:
@@ -745,6 +770,7 @@ class Translator(object):
             equal_weight_attention=False,
             last_state_attention=False,
             keep_max_zero_out_other=False,
+            keep_max_uniform_other=False,
             tvd_permute=False):
 
         if self.copy_attn:
@@ -765,7 +791,7 @@ class Translator(object):
 
         dec_out, dec_attn = self.model.decoder(
             decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention,
-            last_state_attention=last_state_attention, tvd_permute=tvd_permute, keep_max_zero_out_other=keep_max_zero_out_other
+            last_state_attention=last_state_attention, tvd_permute=tvd_permute, keep_max_zero_out_other=keep_max_zero_out_other, keep_max_uniform_other=keep_max_uniform_other
         )
 
         hack_dict = {}
@@ -793,6 +819,10 @@ class Translator(object):
 
             if keep_max_zero_out_other is True:
                 hack_dict['log_probs_keep_max_zero_out_other_attention'] = self.model.generator(dec_attn["std_keep_max_zero_out_other"][1].squeeze(0))
+
+            if keep_max_uniform_other is True:
+                hack_dict['log_probs_keep_max_uniform_other_attention'] = self.model.generator(dec_attn["std_keep_max_uniform_other"][1].squeeze(0))
+
 
             if tvd_permute is True:
                 dec_outs = dec_attn["std_tvd_permute"]
@@ -841,7 +871,7 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        if any([permute_attention, zero_out_attention, equal_weight_attention, last_state_attention, tvd_permute, keep_max_zero_out_other]):
+        if any([permute_attention, zero_out_attention, equal_weight_attention, last_state_attention, tvd_permute, keep_max_zero_out_other, keep_max_uniform_other]):
             return log_probs, attn, hack_dict
         else:
             return log_probs, attn

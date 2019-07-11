@@ -214,6 +214,10 @@ class GlobalAttention(nn.Module):
                         max_index = new_align[i][j][0:length].argmax()
                         new_align[i][j][0:length] = -float('inf')
                         new_align[i][j][max_index] = 1
+                    elif experiment_type == 'keep_max_uniform_other':
+                        max_index = new_align[i][j][0:length].argmax()
+                        new_align[i][j][0:length] = 1
+                        new_align[i][j][max_index] = 4
                     else:
                         print(">>> non of them is True <<<")
                         assert False
