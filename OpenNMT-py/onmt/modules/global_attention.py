@@ -235,6 +235,10 @@ class GlobalAttention(nn.Module):
 
                         new_align[i][j] = shuffled
 
+                    elif experiment_type == 'zero_out_max':
+                        max_index = new_align[i][j][0:length].argmax()
+                        new_align[i][j][max_index] = -float('inf')
+
                     else:
                         print(">>> non of them is True <<<")
                         assert False
