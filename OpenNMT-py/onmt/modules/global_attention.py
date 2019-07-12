@@ -218,6 +218,23 @@ class GlobalAttention(nn.Module):
                         max_index = new_align[i][j][0:length].argmax()
                         new_align[i][j][0:length] = 1
                         new_align[i][j][max_index] = 4
+
+                    elif experiment_type == 'keep_max_permute_other':
+
+                        max_index = new_align[i][j][0:length].argmax()
+                        max_val = new_align[i][j][max_index]
+
+                        first_part = new_align[i][j][:max_index]
+                        second_part = new_align[i][j][max_index+1:length]
+                        third_part = new_align[i][j][length:]
+
+                        to_be_shuffled = np.append(first_part, second_part)
+                        random.shuffle(to_be_shuffled)
+                        shuffled = np.insert(to_be_shuffled, max_index, max_val)
+                        shuffled = np.append(shuffled, third_part)
+
+                        new_align[i][j] = shuffled
+
                     else:
                         print(">>> non of them is True <<<")
                         assert False
