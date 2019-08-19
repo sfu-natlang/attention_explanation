@@ -194,7 +194,7 @@ class GlobalAttention(nn.Module):
 
         # i is batch index, j is target token index, third dimension is for source token index
 
-        if experiment_type is not None and experiment_type != 'zero_out':
+        if experiment_type is not None and experiment_type not in ['zero_out', 'keep_max_uniform_others']:
             assert (align.size()[1] == 1)
             new_align = align.clone().cpu().numpy()
 

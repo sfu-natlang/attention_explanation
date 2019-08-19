@@ -204,7 +204,7 @@ class Translator(object):
         self.unaffected_function_words = defaultdict(int)
         self.unaffected_content_words = defaultdict(int)
 
-        self.counterfactual_attention_method = 'zero_out_max' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
+        self.counterfactual_attention_method = 'keep_max_uniform_others' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
 
     @classmethod
     def from_opt(
