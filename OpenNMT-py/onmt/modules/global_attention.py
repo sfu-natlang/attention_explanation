@@ -204,12 +204,12 @@ class GlobalAttention(nn.Module):
                 for j in range(align.size()[1]):
                     if experiment_type == 'permute':
                         random.shuffle(new_align[i][j][0:length])
-                    elif experiment_type == 'equal_weight':
+                    elif experiment_type == 'uniform':
                         new_align[i][j][0:length] = 1
                     elif experiment_type == 'last_state':
                         new_align[i][j][0:length] = -float('inf')
                         new_align[i][j][length-1] = 1
-                    elif experiment_type == 'keep_max_zero_out_other':
+                    elif experiment_type == 'only_max':
 
                         keep_k = 1
 
@@ -221,22 +221,6 @@ class GlobalAttention(nn.Module):
 
                         for k in range(keep_k):
                             new_align[i][j][indices[k]] = backup[k]
-
-                    elif experiment_type == 'keep_max_permute_other':
-
-                        max_index = new_align[i][j][0:length].argmax()
-                        max_val = new_align[i][j][max_index]
-
-                        first_part = new_align[i][j][:max_index]
-                        second_part = new_align[i][j][max_index+1:length]
-                        third_part = new_align[i][j][length:]
-
-                        to_be_shuffled = np.append(first_part, second_part)
-                        random.shuffle(to_be_shuffled)
-                        shuffled = np.insert(to_be_shuffled, max_index, max_val)
-                        shuffled = np.append(shuffled, third_part)
-
-                        new_align[i][j] = shuffled
 
                     elif experiment_type == 'zero_out_max':
                         max_index = new_align[i][j][0:length].argmax()
@@ -261,7 +245,7 @@ class GlobalAttention(nn.Module):
             align_vectors = sparsemax(align.view(batch*target_l, source_l), -1)
         align_vectors = align_vectors.view(batch, target_l, source_l)
 
-        if experiment_type == 'keep_max_uniform_other':
+        if experiment_type == 'keep_max_uniform_others':
             for i in range(align_vectors.size()[0]): # Batch
                 assert (align_vectors.size()[1] == 1)
 

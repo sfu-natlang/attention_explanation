@@ -21,41 +21,6 @@ from onmt.utils.plotting import *
 from onmt.modules.copy_generator import collapse_copy_scores
 
 
-TOTAL_TOKENS = 0
-TOTAL_FUNCTION = 0
-TOTAL_CONTENT = 0
-
-NOT_CHANGED_TOKENS_WITH_PERMUTE = 0
-NOT_CHANGED_TOKENS_WITH_ZERO = 0
-NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO = 0
-NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT = 0
-NOT_CHANGED_TOKENS_WITH_LAST_STATE = 0
-NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER = 0
-NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER = 0
-NOT_CHANGED_TOKENS_WITH_KEEP_MAX_PERMUTE_OTHER = 0
-NOT_CHANGED_TOKENS_WITH_ZERO_OUT_MAX = 0
-
-
-permute_attention = False
-zero_out_attention = False
-equal_weight_attention = False
-last_state_attention = False
-tvd_permute = False
-keep_max_zero_out_other = False
-keep_max_uniform_other = False
-keep_max_permute_other = False
-zero_out_max = True
-
-
-#not_changed_tokens_at_all_dict = defaultdict(int)
-not_changed_tokens_permute_dict = defaultdict(int)
-not_changed_tokens_zero_out_dict= defaultdict(int)
-not_changed_tokens_equal_weight_dict = defaultdict(int)
-not_changed_tokens_keep_max_zero_out_other_dict = defaultdict(int)
-not_changed_tokens_keep_max_uniform_other_dict = defaultdict(int)
-not_changed_tokens_keep_max_permute_other_dict = defaultdict(int)
-not_changed_tokens_zero_out_max_dict = defaultdict(int)
-
 max_att_dist_change_pairs = []
 
 
@@ -227,12 +192,19 @@ class Translator(object):
         # For attention explanation experiments
         self.tvd_tokens = defaultdict(int) # max_attention > 0.5 and change prob < 0.2
 
-        self.unaffected_function_words_count = 0
-        self.unaffected_content_words = 0
 
+        self.total_tokens = 0
+        self.total_function_words = 0
+        self.total_content_words = 0
+        self.vocab_dict = defaultdict(int)
+
+        self.unaffected_words_count = 0
+        self.unaffected_function_words_count = 0
+        self.unaffected_content_words_count = 0
         self.unaffected_function_words = defaultdict(int)
         self.unaffected_content_words = defaultdict(int)
-        self.vocab_dict = defaultdict(int)
+
+        self.counterfactual_attention_method = 'zero_out_max' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
 
     @classmethod
     def from_opt(
@@ -459,130 +431,71 @@ class Translator(object):
             json.dump(self.translator.beam_accum,
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
 
-        print("TOTAL_TOKENS:  %d" % (TOTAL_TOKENS))
+        print("Total tokens:  %d" % self.total_tokens)
+        print("Total tokens by summing up dict:  %d" % (sum([v for k,v in self.vocab_dict.items()])))
+        print("Total function words:  %d" % self.total_function_words)
+        print("Total content words:  %d" % self.total_content_words)
 
-        print("TOTAL_TOKENS by summing up dict:  %d" % (sum([v for k,v in self.vocab_dict.items()])))
-        print("Total function words:  %d" % (TOTAL_FUNCTION))
-        print("Total content words:  %d" % (TOTAL_CONTENT))
+        print("Number of unaffected function words(method1):  %d" % (sum([v for k,v in self.unaffected_function_words.items()])))
+        print("Number of unaffected content words(method1):  %d" % (sum([v for k,v in self.unaffected_content_words.items()])))
 
+        print("Number of unaffected function words(method2):  %d" % self.unaffected_function_words_count)
+        print("Number of unaffected content words(method2):  %d" % self.unaffected_content_words_count)
 
-        print("Number of unaffected function words:  %d" % (sum([v for k,v in self.unaffected_function_words.items()])))
-        print("Number of unaffected content words:  %d" % (sum([v for k,v in self.unaffected_content_words.items()])))
 
         print("Unaffected function words (top 50):   ")
         d = Counter(self.unaffected_function_words)
         for token,freq in d.most_common(n=50):
-            print("%s - total: %d - ratio of occurences: %f - ratio of total FWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_FUNCTION))
+            print("%s - total: %d - ratio of occurences: %f - ratio of total FWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / self.total_function_words))
 
         print("Unaffected content words (top 50):   ")
         d = Counter(self.unaffected_content_words)
         for token,freq in d.most_common(n=50):
-            print("%s - total: %d - ratio of occurences: %f - ratio of total FWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_CONTENT))
+            print("%s - total: %d - ratio of occurences: %f - ratio of total FWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / self.total_content_words))
 
-        print("============ paper =================")
-        result = []
+        #print("============ paper =================")
+        #result = []
 
-        print("Unaffected function words (top 50):   ")
-        d = Counter(self.unaffected_function_words)
-        for token,freq in d.most_common(n=50):
-            result.append((token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_FUNCTION))
+        #print("Unaffected function words (top 50):   ")
+        #d = Counter(self.unaffected_function_words)
+        #for token,freq in d.most_common(n=50):
+        #    result.append((token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_FUNCTION))
 
-        print(result)
+        #print(result)
 
-        result = []
-        print("Unaffected content words (top 50):   ")
-        d = Counter(self.unaffected_content_words)
-        for token,freq in d.most_common(n=50):
-            result.append((token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_CONTENT))
+        #result = []
+        #print("Unaffected content words (top 50):   ")
+        #d = Counter(self.unaffected_content_words)
+        #for token,freq in d.most_common(n=50):
+        #    result.append((token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_CONTENT))
 
-        print(result)
+        #print(result)
 
-        print("============== paper end ================")
-
-        if permute_attention is True:
-            print("NOT_CHANGED_TOKENS_WITH_PERMUTE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE, NOT_CHANGED_TOKENS_WITH_PERMUTE / float(TOTAL_TOKENS)))
-
-            print("dict:  ")
-            d = Counter(not_changed_tokens_permute_dict)
-            print(d.most_common(n=200))
-
-            function_words_count = sum([v for k,v in d.items() if is_function_word(k)])
-            print("count of function words in it:  %d" % function_words_count)
-
-        if zero_out_attention is True:
-            print("NOT_CHANGED_TOKENS_WITH_ZERO:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_ZERO / float(TOTAL_TOKENS)))
-
-            print("dict:  ")
-            d = Counter(not_changed_tokens_zero_out_dict)
-            print(d.most_common(n=200))
+        #print("============== paper end ================")
 
 
-        if permute_attention is True and zero_out_attention is True:
-            print("NOT CHANGED AT ALL:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO, NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO / float(TOTAL_TOKENS)))
+        #if tvd_permute is True:
+        #    print("dict:  ")
+        #    d = Counter(self.tvd_tokens)
+        #    print(d.most_common(n=100))
 
-            ratio = (NOT_CHANGED_TOKENS_WITH_PERMUTE - NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO) / NOT_CHANGED_TOKENS_WITH_PERMUTE
-            print("Ratio of tokens that not changed with permute but changed with zero:  %f" % ratio)
+        #    print("sum:  ")
+        #    print(sum(self.tvd_tokens.values()))
 
-        if equal_weight_attention is True:
-            print("NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT, NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT / float(TOTAL_TOKENS)))
+        #    fig, ax = init_gridspec(3, 3, 1)
 
-            print("dict:  ")
-            d = Counter(not_changed_tokens_equal_weight_dict)
-            print(d.most_common(n=200))
+        #    max_attn = [el[0] for el in max_att_dist_change_pairs]
+        #    med_diff = [el[1] for el in max_att_dist_change_pairs]
+        #    yhat = [0] * len(max_attn)
 
-        if last_state_attention is True:
-            print("NOT_CHANGED_TOKENS_WITH_LAST_STATE:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_LAST_STATE, NOT_CHANGED_TOKENS_WITH_LAST_STATE / float(TOTAL_TOKENS)))
+        #    plot_violin_by_class(ax[0], max_attn, med_diff, yhat, xlim=(0, 1.0))
+        #    annotate(ax[0], xlim=(-0.05, 1.05), ylabel="Max attention", xlabel="Median Output Difference", legend=None)
 
-        if keep_max_zero_out_other:
-            print("NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER, NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER / float(TOTAL_TOKENS)))
+        #    adjust_gridspec()
+        #    save_axis_in_file(fig, ax[0], "/cs/natlang-expts/pooya/attention_explanation/plots", "tvd_permutation")
+        #    show_gridspec()
 
-            print("dict:  ")
-            d = Counter(not_changed_tokens_keep_max_zero_out_other_dict)
-            print(d.most_common(n=200))
-
-        if keep_max_uniform_other:
-            print("NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER, NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER / float(TOTAL_TOKENS)))
-
-            print("dict:  ")
-            d = Counter(not_changed_tokens_keep_max_uniform_other_dict)
-            print(d.most_common(n=200))
-
-        if keep_max_permute_other:
-            print("NOT_CHANGED_TOKENS_WITH_KEEP_MAX_PERMUTE_OTHER:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_KEEP_MAX_PERMUTE_OTHER, NOT_CHANGED_TOKENS_WITH_KEEP_MAX_PERMUTE_OTHER / float(TOTAL_TOKENS)))
-
-            print("dict:  ")
-            d = Counter(not_changed_tokens_keep_max_permute_other_dict)
-            print(d.most_common(n=200))
-
-        if zero_out_max:
-            print("NOT_CHANGED_TOKENS_WITH_ZERO_OUT_MAX:  %d - ratio: %f" % (NOT_CHANGED_TOKENS_WITH_ZERO_OUT_MAX, NOT_CHANGED_TOKENS_WITH_ZERO_OUT_MAX / float(TOTAL_TOKENS)))
-
-            print("dict:  ")
-            d = Counter(not_changed_tokens_zero_out_max_dict)
-            print(d.most_common(n=200))
-
-        if tvd_permute is True:
-            print("dict:  ")
-            d = Counter(self.tvd_tokens)
-            print(d.most_common(n=100))
-
-            print("sum:  ")
-            print(sum(self.tvd_tokens.values()))
-
-            fig, ax = init_gridspec(3, 3, 1)
-
-            max_attn = [el[0] for el in max_att_dist_change_pairs]
-            med_diff = [el[1] for el in max_att_dist_change_pairs]
-            yhat = [0] * len(max_attn)
-
-            plot_violin_by_class(ax[0], max_attn, med_diff, yhat, xlim=(0, 1.0))
-            annotate(ax[0], xlim=(-0.05, 1.05), ylabel="Max attention", xlabel="Median Output Difference", legend=None)
-
-            adjust_gridspec()
-            save_axis_in_file(fig, ax[0], "/cs/natlang-expts/pooya/attention_explanation/plots", "tvd_permutation")
-            show_gridspec()
-
-            print("len:  %d", len(max_att_dist_change_pairs))
+        #    print("len:  %d", len(max_att_dist_change_pairs))
 
         return all_scores, all_predictions
 
@@ -646,46 +559,12 @@ class Translator(object):
                 src_map=src_map,
                 step=step,
                 batch_offset=random_sampler.select_indices,
-                permute_attention=permute_attention,
-                zero_out_attention=zero_out_attention,
-                equal_weight_attention=equal_weight_attention,
-                last_state_attention=last_state_attention,
-                tvd_permute=tvd_permute,
-                keep_max_zero_out_other=keep_max_zero_out_other,
-                keep_max_uniform_other=keep_max_uniform_other,
-                keep_max_permute_other=keep_max_permute_other,
-                zero_out_max=zero_out_max,
             )
 
             top_prob = torch.topk(log_probs, k=1, dim=1)
 
 
-            global TOTAL_TOKENS
-            global NOT_CHANGED_TOKENS_WITH_PERMUTE
-            global NOT_CHANGED_TOKENS_WITH_ZERO
-            global NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT
-            global NOT_CHANGED_TOKENS_WITH_LAST_STATE
-            global NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO
-            global not_changed_tokens_permute_dict
-            global not_changed_tokens_equal_weight_dict
-            global max_att_dist_change_pairs
-
-            global NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER
-            global not_changed_tokens_keep_max_zero_out_other_dict
-
-            global NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER
-            global not_changed_tokens_keep_max_uniform_other_dict
-
-            global NOT_CHANGED_TOKENS_WITH_KEEP_MAX_PERMUTE_OTHER
-            global not_changed_tokens_keep_max_permute_other_dict
-
-            global NOT_CHANGED_TOKENS_WITH_ZERO_OUT_MAX
-            global not_changed_tokens_zero_out_max_dict
-
-            global TOTAL_FUNCTION
-            global TOTAL_CONTENT
-
-            TOTAL_TOKENS += top_prob.indices.size()[0]
+            self.total_tokens += top_prob.indices.size()[0]
 
             tgt_field = dict(self.fields)["tgt"].base_field
             vocab = tgt_field.vocab
@@ -698,218 +577,41 @@ class Translator(object):
                 self.vocab_dict[word] += 1
 
                 if(is_function_word(word)):
-                    TOTAL_FUNCTION += 1
+                    self.total_function_words += 1
                 else:
-                    TOTAL_CONTENT += 1
+                    self.total_content_words += 1
 
-            if permute_attention is True:
-                log_probs_permute_attention = hack_dict['log_probs_permute_attention']
-                top_prob_permute = torch.topk(log_probs_permute_attention, k=1, dim=1)
-                equality_permute = (top_prob.indices == top_prob_permute.indices)
-                equality_permute_cpu = equality_permute.cpu()
+            log_probs_counterfactual = hack_dict['log_probs_counterfactual']
+            top_prob_counterfactual = torch.topk(log_probs_counterfactual, k=1, dim=1)
+            unaffected_boolean = (top_prob.indices == top_prob_counterfactual.indices)
+            self.unaffected_words_count += unaffected_boolean.sum(dim=0).cpu().numpy()[0]
 
-                NOT_CHANGED_TOKENS_WITH_PERMUTE += equality_permute.sum(dim=0).cpu().numpy()[0]
+            for i in range(unaffected_boolean.size()[0]):
+                if(unaffected_boolean[i][0].item() == 1):
+                    word = vocab.itos[top_prob.indices[i][0]]
 
-                for i in range(equality_permute.size()[0]):
-                    if(equality_permute_cpu[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-                        not_changed_tokens_permute_dict[word] += 1
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            #import random
-                            #if batch.src[1][i].item() < 15:
-                            #    print(">>>>> shit <<<<")
-                            #    print("length:  ")
-                            #    print(batch.src[1][i].item())
-
-                            #    print(batch.src[0].size())
-
-                            #    print("source:  ")
-                            #    print(' '.join([vocab_src.itos[el] for el in batch.src[0][:,0,0]]))
-
-                            #    print("to be generated target word:  ")
-                            #    print(word)
-
-                            #    print("attention weights:  ")
-                            #    print(attn[0,0,:])
-                            #    print("sum:  ")
-                            #    print(torch.sum(attn[0,0,:]))
-
-                            #    print("permuted attn:  ")
-                            #    print(hack_dict["attn_permute"])
-
-                            self.unaffected_content_words[word] += 1
-
-            if zero_out_attention is True:
-                log_probs_zero_out_attention = hack_dict['log_probs_zero_out_attention']
-                top_prob_zero = torch.topk(log_probs_zero_out_attention, k=1, dim=1)
-                equality_zero = (top_prob.indices == top_prob_zero.indices)
-
-                NOT_CHANGED_TOKENS_WITH_ZERO += equality_zero.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_zero.size()[0]):
-                    if(equality_zero[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-                        not_changed_tokens_zero_out_dict[word] += 1
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            self.unaffected_content_words[word] += 1
+                    if is_function_word(word):
+                        self.unaffected_function_words_count += 1
+                        self.unaffected_function_words[word] += 1
+                    else:
+                        self.unaffected_content_words_count += 1
+                        self.unaffected_content_words[word] += 1
 
 
-            if permute_attention is True and zero_out_attention is True:
-                not_changed_at_all = 0
-                for i in range(equality_permute.size()[0]):
-                    if(equality_permute_cpu[i][0] == 1 and equality_zero_cpu[i][0] == 1):
-                        not_changed_at_all += 1
+            #if tvd_permute is True:
+            #    max_attention = hack_dict['tvd_max_attention'].cpu()
+            #    dist_change_median = hack_dict['tvd_dist_change_median'].cpu()
 
-                NOT_CHANGED_TOKENS_WITH_PERMUTE_NOT_CHANGED_WITH_ZERO += not_changed_at_all
+            #    for i in range(top_prob.indices.size()[0]):
+            #        if(max_attention[i] > 0.5 and dist_change_median[i] < 0.2):
+            #            self.tvd_tokens[vocab.itos[top_prob.indices[i][0]]] += 1
 
-            if equal_weight_attention is True:
-                log_probs_equal_weight_attention = hack_dict['log_probs_equal_weight_attention']
-                top_prob_equal_weight = torch.topk(log_probs_equal_weight_attention, k=1, dim=1)
-                equality_equal_weight = (top_prob.indices == top_prob_equal_weight.indices)
-                equality_equal_weight_cpu = equality_equal_weight.cpu()
+            #    assert (len(max_attention.size()) == 1)
+            #    assert (len(dist_change_median.size()) == 1)
+            #    assert (max_attention.size()[0] == dist_change_median.size()[0])
 
-                NOT_CHANGED_TOKENS_WITH_EQUAL_WEIGHT += equality_equal_weight.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_equal_weight.size()[0]):
-                    if(equality_equal_weight_cpu[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-
-                        not_changed_tokens_equal_weight_dict[word] += 1
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            self.unaffected_content_words[word] += 1
-
-            if last_state_attention is True:
-                log_probs_last_state_attention = hack_dict['log_probs_last_state_attention']
-                top_prob_last_state = torch.topk(log_probs_last_state_attention, k=1, dim=1)
-                equality_last_state = (top_prob.indices == top_prob_last_state.indices)
-
-                NOT_CHANGED_TOKENS_WITH_LAST_STATE += equality_last_state.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_last_state.size()[0]):
-                    if(equality_last_state[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            self.unaffected_content_words[word] += 1
-
-
-
-            if keep_max_zero_out_other is True:
-                log_probs_keep_max_zero_out_other_attention = hack_dict['log_probs_keep_max_zero_out_other_attention']
-                top_prob_keep_max_zero_out_other = torch.topk(log_probs_keep_max_zero_out_other_attention, k=1, dim=1)
-                equality_keep_max_zero_out_other = (top_prob.indices == top_prob_keep_max_zero_out_other.indices)
-                equality_keep_max_zero_out_other_cpu = equality_keep_max_zero_out_other.cpu()
-
-                NOT_CHANGED_TOKENS_WITH_KEEP_MAX_ZERO_OUT_OTHER += equality_keep_max_zero_out_other.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_keep_max_zero_out_other.size()[0]):
-                    if(equality_keep_max_zero_out_other_cpu[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            self.unaffected_content_words[word] += 1
-
-                        not_changed_tokens_keep_max_zero_out_other_dict[vocab.itos[top_prob.indices[i][0]]] += 1
-
-            if keep_max_uniform_other is True:
-                log_probs_keep_max_uniform_other_attention = hack_dict['log_probs_keep_max_uniform_other_attention']
-                top_prob_keep_max_uniform_other = torch.topk(log_probs_keep_max_uniform_other_attention, k=1, dim=1)
-                equality_keep_max_uniform_other = (top_prob.indices == top_prob_keep_max_uniform_other.indices)
-                equality_keep_max_uniform_other_cpu = equality_keep_max_uniform_other.cpu()
-
-                NOT_CHANGED_TOKENS_WITH_KEEP_MAX_UNIFORM_OTHER += equality_keep_max_uniform_other.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_keep_max_uniform_other.size()[0]):
-                    if(equality_keep_max_uniform_other_cpu[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-
-                        not_changed_tokens_keep_max_uniform_other_dict[word] += 1
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            self.unaffected_content_words[word] += 1
-
-
-            if keep_max_permute_other is True:
-                log_probs_keep_max_permute_other_attention = hack_dict['log_probs_keep_max_permute_other_attention']
-                top_prob_keep_max_permute_other = torch.topk(log_probs_keep_max_permute_other_attention, k=1, dim=1)
-                equality_keep_max_permute_other = (top_prob.indices == top_prob_keep_max_permute_other.indices)
-                equality_keep_max_permute_other_cpu = equality_keep_max_permute_other.cpu()
-
-                NOT_CHANGED_TOKENS_WITH_KEEP_MAX_PERMUTE_OTHER += equality_keep_max_permute_other.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_keep_max_permute_other.size()[0]):
-                    if(equality_keep_max_permute_other_cpu[i][0] == 1):
-                        not_changed_tokens_keep_max_permute_other_dict[vocab.itos[top_prob.indices[i][0]]] += 1
-
-            if zero_out_max is True:
-                log_probs_zero_out_max_attention = hack_dict['log_probs_zero_out_max_attention']
-                top_prob_zero_out_max = torch.topk(log_probs_zero_out_max_attention, k=1, dim=1)
-                equality_zero_out_max = (top_prob.indices == top_prob_zero_out_max.indices)
-                equality_zero_out_max_cpu = equality_zero_out_max.cpu()
-
-                NOT_CHANGED_TOKENS_WITH_ZERO_OUT_MAX += equality_zero_out_max.sum(dim=0).cpu().numpy()[0]
-
-                for i in range(equality_zero_out_max.size()[0]):
-                    if(equality_zero_out_max_cpu[i][0] == 1):
-                        word = vocab.itos[top_prob.indices[i][0]]
-                        not_changed_tokens_zero_out_max_dict[word] += 1
-
-                        if is_function_word(word):
-                            self.unaffected_function_words[word] += 1
-                        else:
-                            import random
-                            if batch.src[1][i].item() < 15:
-                                print(">>>>> shit <<<<")
-                                print("length:  ")
-                                print(batch.src[1][i].item())
-
-                                print(batch.src[0].size())
-
-                                print("source:  ")
-                                print(' '.join([vocab_src.itos[el] for el in batch.src[0][:,0,0]]))
-
-                                print("to be generated target word:  ")
-                                print(word)
-
-                                print("attention weights:  ")
-                                print(attn[0,0,:])
-                                print("sum:  ")
-                                print(torch.sum(attn[0,0,:]))
-
-                                print("attn zero out max:  ")
-                                print(hack_dict["attn_zero_out_max"])
-
-                            self.unaffected_content_words[word] += 1
-
-            if tvd_permute is True:
-                max_attention = hack_dict['tvd_max_attention'].cpu()
-                dist_change_median = hack_dict['tvd_dist_change_median'].cpu()
-
-                for i in range(top_prob.indices.size()[0]):
-                    if(max_attention[i] > 0.5 and dist_change_median[i] < 0.2):
-                        self.tvd_tokens[vocab.itos[top_prob.indices[i][0]]] += 1
-
-                assert (len(max_attention.size()) == 1)
-                assert (len(dist_change_median.size()) == 1)
-                assert (max_attention.size()[0] == dist_change_median.size()[0])
-
-                for i in range(max_attention.size()[0]):
-                    max_att_dist_change_pairs.append((float(max_attention[i].cpu()), float(dist_change_median[i].cpu())))
+            #    for i in range(max_attention.size()[0]):
+            #        max_att_dist_change_pairs.append((float(max_attention[i].cpu()), float(dist_change_median[i].cpu())))
 
 
             random_sampler.advance(log_probs, attn)
@@ -988,16 +690,7 @@ class Translator(object):
             memory_lengths,
             src_map=None,
             step=None,
-            batch_offset=None,
-            permute_attention=False,
-            zero_out_attention=False,
-            equal_weight_attention=False,
-            last_state_attention=False,
-            keep_max_zero_out_other=False,
-            keep_max_uniform_other=False,
-            keep_max_permute_other=False,
-            zero_out_max=False,
-            tvd_permute=False):
+            batch_offset=None):
 
         if self.copy_attn:
             # Turn any copied words into UNKs.
@@ -1016,8 +709,7 @@ class Translator(object):
         #print(before_state == self.model.decoder.state["hidden"])
 
         dec_out, dec_attn = self.model.decoder(
-            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention,
-            last_state_attention=last_state_attention, tvd_permute=tvd_permute, keep_max_zero_out_other=keep_max_zero_out_other, keep_max_uniform_other=keep_max_uniform_other, keep_max_permute_other=keep_max_permute_other, zero_out_max=zero_out_max
+            decoder_in, memory_bank, memory_lengths=memory_lengths, step=step, counterfactual_attention_method=self.counterfactual_attention_method
         )
 
         hack_dict = {}
@@ -1031,54 +723,31 @@ class Translator(object):
 
             log_probs = self.model.generator(dec_out.squeeze(0))
 
-            if permute_attention is True:
-                hack_dict['log_probs_permute_attention'] = self.model.generator(dec_attn["std_permute"][1].squeeze(0))
-                hack_dict['attn_permute'] = dec_attn['std_permute'][0]
+            if self.counterfactual_attention_method is not None:
+                hack_dict['log_probs_counterfactual'] = self.model.generator(dec_attn[self.counterfactual_attention_method][1].squeeze(0))
+                hack_dict['attention_matrix'] = dec_attn[self.counterfactual_attention_method][0]
 
-            if zero_out_attention is True:
-                hack_dict['log_probs_zero_out_attention'] = self.model.generator(dec_attn["std_zero_out"][1].squeeze(0))
-
-            if equal_weight_attention is True:
-                hack_dict['log_probs_equal_weight_attention'] = self.model.generator(dec_attn["std_equal_weight"][1].squeeze(0))
-
-            if last_state_attention is True:
-                hack_dict['log_probs_last_state_attention'] = self.model.generator(dec_attn["std_last_state"][1].squeeze(0))
-
-            if keep_max_zero_out_other is True:
-                hack_dict['log_probs_keep_max_zero_out_other_attention'] = self.model.generator(dec_attn["std_keep_max_zero_out_other"][1].squeeze(0))
-
-            if keep_max_uniform_other is True:
-                hack_dict['log_probs_keep_max_uniform_other_attention'] = self.model.generator(dec_attn["std_keep_max_uniform_other"][1].squeeze(0))
-
-            if keep_max_permute_other is True:
-                hack_dict['log_probs_keep_max_permute_other_attention'] = self.model.generator(dec_attn["std_keep_max_permute_other"][1].squeeze(0))
-
-            if zero_out_max is True:
-                hack_dict['log_probs_zero_out_max_attention'] = self.model.generator(dec_attn["std_zero_out_max"][1].squeeze(0))
-                hack_dict['attn_zero_out_max'] = dec_attn['std_zero_out_max'][0]
-
-
-            if tvd_permute is True:
-                dec_outs = dec_attn["std_tvd_permute"]
-                distances = []
-                for my_dec_out in dec_outs:
-                    my_dec_out = my_dec_out.squeeze(0)
-                    my_log_prob = self.model.generator(my_dec_out)
+            #if tvd_permute is True:
+            #    dec_outs = dec_attn["std_tvd_permute"]
+            #    distances = []
+            #    for my_dec_out in dec_outs:
+            #        my_dec_out = my_dec_out.squeeze(0)
+            #        my_log_prob = self.model.generator(my_dec_out)
 
                     #distance = tvd(torch.exp(log_probs), torch.exp(my_log_prob))
-                    distance = high_distance(torch.exp(log_probs), torch.exp(my_log_prob))[0]
-                    distances.append(distance)
+            #        distance = high_distance(torch.exp(log_probs), torch.exp(my_log_prob))[0]
+            #        distances.append(distance)
 
-                dist_change_median = torch.median(torch.stack(distances), dim=0).values
+            #    dist_change_median = torch.median(torch.stack(distances), dim=0).values
 
-                if attn.size()[0] != 1:
-                    print(">>>> Shit! Target length in attention is more than 1 <<<<")
-                    assert False
+            #    if attn.size()[0] != 1:
+            #        print(">>>> Shit! Target length in attention is more than 1 <<<<")
+            #        assert False
 
-                max_attention = attn[0].max(dim=1).values
+            #    max_attention = attn[0].max(dim=1).values
 
-                hack_dict['tvd_dist_change_median'] = dist_change_median
-                hack_dict['tvd_max_attention'] = max_attention
+            #    hack_dict['tvd_dist_change_median'] = dist_change_median
+            #    hack_dict['tvd_max_attention'] = max_attention
 
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
@@ -1105,8 +774,7 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        if any([permute_attention, zero_out_attention, equal_weight_attention, last_state_attention, tvd_permute, keep_max_zero_out_other, keep_max_uniform_other, keep_max_permute_other,
-                zero_out_max]):
+        if self.counterfactual_attention_method is not None:
             return log_probs, attn, hack_dict
         else:
             return log_probs, attn

@@ -191,7 +191,7 @@ class RNNDecoderBase(DecoderBase):
         self.state["hidden"] = tuple(h.detach() for h in self.state["hidden"])
         self.state["input_feed"] = self.state["input_feed"].detach()
 
-    def forward(self, tgt, memory_bank, memory_lengths=None, step=None, update_states=False, permute_attention=False, zero_out_attention=False, equal_weight_attention=False, last_state_attention=False, tvd_permute=False, keep_max_zero_out_other=False, keep_max_uniform_other=False, keep_max_permute_other=False, zero_out_max=False):
+    def forward(self, tgt, memory_bank, memory_lengths=None, step=None, update_states=False, counterfactual_attention_method=None):
         """
         Args:
             tgt (LongTensor): sequences of padded tokens
@@ -211,8 +211,7 @@ class RNNDecoderBase(DecoderBase):
         """
 
         dec_state, dec_outs, attns = self._run_forward_pass(
-            tgt, memory_bank, memory_lengths=memory_lengths, permute_attention=permute_attention, zero_out_attention=zero_out_attention, equal_weight_attention=equal_weight_attention, last_state_attention=last_state_attention, tvd_permute=tvd_permute, keep_max_zero_out_other=keep_max_zero_out_other, keep_max_uniform_other=keep_max_uniform_other, keep_max_permute_other=keep_max_permute_other,
-            zero_out_max=zero_out_max)
+            tgt, memory_bank, memory_lengths=memory_lengths, counterfactual_attention_method=counterfactual_attention_method)
 
         # Update the state with the result.
         if not isinstance(dec_state, tuple):
@@ -257,7 +256,7 @@ class StdRNNDecoder(RNNDecoderBase):
     or `copy_attn` support.
     """
 
-    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, permute_attention=False, zero_out_attention=False, equal_weight_attention=False, last_state_attention=False, tvd_permute=False, keep_max_zero_out_other=False, keep_max_uniform_other=False, keep_max_permute_other=False, zero_out_max=False):
+    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, counterfactual_attention_method=None):
         """
         Private helper for running the specific RNN forward pass.
         Must be overriden by all subclasses.
@@ -308,100 +307,29 @@ class StdRNNDecoder(RNNDecoderBase):
 
             attns["std"] = p_attn
 
-            if permute_attention is True:
-                dec_outs_with_permute, p_attn_with_permute = self.attn(
+            if counterfactual_attention_method is not None:
+                dec_outs_counterfactual, p_attn_counterfactual = self.attn(
                     rnn_output.transpose(0, 1).contiguous(),
                     memory_bank.transpose(0, 1),
                     memory_lengths=memory_lengths,
-                    experiment_type='permute'
+                    experiment_type=counterfactual_attention_method
                 )
 
-                attns["std_permute"] = (p_attn_with_permute, dec_outs_with_permute) # hack (putting it in attns dictionary rather than returning extra argument but who fuckings cares?)
+                attns[counterfactual_attention_method] = (p_attn_counterfactual, dec_outs_counterfactual)
 
-            if equal_weight_attention is True:
-                dec_outs_with_equal_weight, p_attn_with_equal_weight = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='equal_weight'
-                )
+            #if tvd_permute is True:
+            #    my_dec_outs = []
+            #    for i in range(100):
+            #        dec_outs_with_permute, p_attn_with_permute = self.attn(
+            #            rnn_output.transpose(0, 1).contiguous(),
+            #            memory_bank.transpose(0, 1),
+            #            memory_lengths=memory_lengths,
+            #            experiment_type='permute'
+            #        )
 
-                attns["std_equal_weight"] = (p_attn_with_equal_weight, dec_outs_with_equal_weight)
+            #        my_dec_outs.append(dec_outs_with_permute)
 
-            if zero_out_attention is True:
-                dec_outs_with_zero_out, p_attn_with_zero_out = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='zero_out'
-                )
-
-                attns["std_zero_out"] = (p_attn_with_zero_out, dec_outs_with_zero_out)
-
-            if last_state_attention is True:
-                dec_outs_with_last_state, p_attn_with_last_state = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='last_state'
-                )
-
-                attns["std_last_state"] = (p_attn_with_last_state, dec_outs_with_last_state)
-
-            if keep_max_zero_out_other is True:
-                dec_outs_with_keep_max_zero_out_other, p_attn_with_keep_max_zero_out_other = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='keep_max_zero_out_other'
-                )
-
-                attns["std_keep_max_zero_out_other"] = (p_attn_with_keep_max_zero_out_other, dec_outs_with_keep_max_zero_out_other)
-
-            if keep_max_uniform_other is True:
-                dec_outs_with_keep_max_uniform_other, p_attn_with_keep_max_uniform_other = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='keep_max_uniform_other'
-                )
-
-                attns["std_keep_max_uniform_other"] = (p_attn_with_keep_max_uniform_other, dec_outs_with_keep_max_uniform_other)
-
-            if keep_max_permute_other is True:
-                dec_outs_with_keep_max_permute_other, p_attn_with_keep_max_permute_other = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='keep_max_permute_other'
-                )
-
-                attns["std_keep_max_permute_other"] = (p_attn_with_keep_max_permute_other, dec_outs_with_keep_max_permute_other)
-
-            if zero_out_max is True:
-                dec_outs_with_zero_out_max, p_attn_with_zero_out_max = self.attn(
-                    rnn_output.transpose(0, 1).contiguous(),
-                    memory_bank.transpose(0, 1),
-                    memory_lengths=memory_lengths,
-                    experiment_type='zero_out_max'
-                )
-
-                attns["std_zero_out_max"] = (p_attn_with_zero_out_max, dec_outs_with_zero_out_max)
-
-
-            if tvd_permute is True:
-                my_dec_outs = []
-                for i in range(100):
-                    dec_outs_with_permute, p_attn_with_permute = self.attn(
-                        rnn_output.transpose(0, 1).contiguous(),
-                        memory_bank.transpose(0, 1),
-                        memory_lengths=memory_lengths,
-                        experiment_type='permute'
-                    )
-
-                    my_dec_outs.append(dec_outs_with_permute)
-
-                attns["std_tvd_permute"] = my_dec_outs
+            #    attns["std_tvd_permute"] = my_dec_outs
 
 
         # Calculate the context gate.
