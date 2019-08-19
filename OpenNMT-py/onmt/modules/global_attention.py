@@ -261,6 +261,25 @@ class GlobalAttention(nn.Module):
             align_vectors = sparsemax(align.view(batch*target_l, source_l), -1)
         align_vectors = align_vectors.view(batch, target_l, source_l)
 
+        if experiment_type == 'keep_max_uniform_other':
+            for i in range(align_vectors.size()[0]): # Batch
+                assert (align_vectors.size()[1] == 1)
+
+                length = memory_lengths[i] if memory_lengths is not None else align_vectors[i][0].size()[0]
+                if(length == 1):
+                    print("length of source is 1!")
+                    continue
+
+                max_index = align_vectors[i][0][0:length].argmax()
+                max_val = align_vectors[i][0][max_index].item()
+
+                assert (max_val > 0)
+                assert (max_val <= 1)
+
+                align_vectors[i][0][0:length] = (1 - max_val) * 1.0 / float(length - 1)
+                align_vectors[i][0][max_index] = max_val
+
+
         # each context vector c_t is the weighted average
         # over all the source hidden states
         c = torch.bmm(align_vectors, memory_bank)
