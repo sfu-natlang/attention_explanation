@@ -203,7 +203,18 @@ class GlobalAttention(nn.Module):
 
                 for j in range(align.size()[1]):
                     if experiment_type == 'permute':
-                        random.shuffle(new_align[i][j][0:length])
+                        max_index = new_align[i][j][0:length].argmax()
+
+                        succeed = False
+                        for _ in range(10):
+                            random.shuffle(new_align[i][j][0:length])
+                            if(new_align[i][j][0:length].argmax() != max_index):
+                                succeed = True
+                                break
+
+                        if succeed is False:
+                            print("Couldn't permute properly! Be careful")
+
                     elif experiment_type == 'uniform':
                         new_align[i][j][0:length] = 1
                     elif experiment_type == 'last_state':
