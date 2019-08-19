@@ -6,6 +6,12 @@ import inspect
 from itertools import islice
 
 
+FUNCTION_WORDS = set()
+with open('/cs/natlang-expts/pooya/attention_explanation/function_words.txt') as f:
+    for line in f:
+        FUNCTION_WORDS.add(line.rstrip())
+
+
 def split_corpus(path, shard_size):
     with open(path, "rb") as f:
         if shard_size <= 0:
@@ -135,3 +141,7 @@ def high_distance(dist_before, dist_after):
     values_after = dist_after.gather(1, max_indices_before.view(-1,1)).t()
 
     return (max_values_before - values_after).abs()
+
+
+def is_function_word(word):
+    return word in FUNCTION_WORDS
