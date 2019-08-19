@@ -326,6 +326,14 @@ class StdRNNDecoder(RNNDecoderBase):
 
                 attns['zero_out_max'] = (p_attn_counterfactual, dec_outs_counterfactual)
 
+                dec_outs_counterfactual, p_attn_counterfactual = self.attn(
+                    rnn_output.transpose(0, 1).contiguous(),
+                    memory_bank.transpose(0, 1),
+                    memory_lengths=memory_lengths,
+                    experiment_type='permute'
+                )
+
+                attns['permute'] = (p_attn_counterfactual, dec_outs_counterfactual)
 
             elif counterfactual_attention_method is not None:
                 dec_outs_counterfactual, p_attn_counterfactual = self.attn(

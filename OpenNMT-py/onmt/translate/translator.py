@@ -590,8 +590,14 @@ class Translator(object):
                 top_prob_zero_out_max = torch.topk(log_probs_zero_out_max, k=1, dim=1)
                 unaffected_boolean_zero_out_max = (top_prob.indices == top_prob_zero_out_max.indices)
 
+                log_probs_permute = hack_dict['log_probs_permute']
+                top_prob_permute = torch.topk(log_probs_permute, k=1, dim=1)
+                unaffected_boolean_permute = (top_prob.indices == top_prob_permute.indices)
+
+
+
                 for i in range(unaffected_boolean_zero_out_max.size()[0]):
-                    if(unaffected_boolean_uniform[i][0].item() == 1 or unaffected_boolean_zero_out_max[i][0].item() == 1):
+                    if(unaffected_boolean_uniform[i][0].item() == 1 or unaffected_boolean_zero_out_max[i][0].item() == 1 or unaffected_boolean_permute[i][0].item() == 1):
                         word = vocab.itos[top_prob.indices[i][0]]
 
                         if is_function_word(word):
@@ -749,6 +755,9 @@ class Translator(object):
                 hack_dict['attention_matrix_uniform'] = dec_attn['uniform'][0]
                 hack_dict['log_probs_zero_out_max'] = self.model.generator(dec_attn['zero_out_max'][1].squeeze(0))
                 hack_dict['attention_matrix_zero_out_max'] = dec_attn['zero_out_max'][0]
+                hack_dict['log_probs_permute'] = self.model.generator(dec_attn['permute'][1].squeeze(0))
+                hack_dict['attention_matrix_permute'] = dec_attn['permute'][0]
+
 
             elif self.counterfactual_attention_method is not None:
                 hack_dict['log_probs_counterfactual'] = self.model.generator(dec_attn[self.counterfactual_attention_method][1].squeeze(0))
