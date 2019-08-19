@@ -194,9 +194,8 @@ class GlobalAttention(nn.Module):
 
         # i is batch index, j is target token index, third dimension is for source token index
 
-        assert (align.size()[1] == 1)
-
         if experiment_type is not None and experiment_type != 'zero_out':
+            assert (align.size()[1] == 1)
             new_align = align.clone().cpu().numpy()
 
             for i in range(align.size()[0]):
@@ -211,13 +210,17 @@ class GlobalAttention(nn.Module):
                         new_align[i][j][0:length] = -float('inf')
                         new_align[i][j][length-1] = 1
                     elif experiment_type == 'keep_max_zero_out_other':
-                        max_index = new_align[i][j][0:length].argmax()
+
+                        keep_k = 1
+
+                        indices = new_align[i][j][0:length].argsort()[-keep_k:][::-1]
+
+                        backup = np.copy(new_align[i][j][indices])
+
                         new_align[i][j][0:length] = -float('inf')
-                        new_align[i][j][max_index] = 1
-                    elif experiment_type == 'keep_max_uniform_other':
-                        max_index = new_align[i][j][0:length].argmax()
-                        new_align[i][j][0:length] = 1
-                        new_align[i][j][max_index] = 4
+
+                        for k in range(keep_k):
+                            new_align[i][j][indices[k]] = backup[k]
 
                     elif experiment_type == 'keep_max_permute_other':
 
