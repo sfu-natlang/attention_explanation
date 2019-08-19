@@ -307,7 +307,27 @@ class StdRNNDecoder(RNNDecoderBase):
 
             attns["std"] = p_attn
 
-            if counterfactual_attention_method is not None:
+            if counterfactual_attention_method == 'uniform_or_zero_out_max':
+                dec_outs_counterfactual, p_attn_counterfactual = self.attn(
+                    rnn_output.transpose(0, 1).contiguous(),
+                    memory_bank.transpose(0, 1),
+                    memory_lengths=memory_lengths,
+                    experiment_type='uniform'
+                )
+
+                attns['uniform'] = (p_attn_counterfactual, dec_outs_counterfactual)
+
+                dec_outs_counterfactual, p_attn_counterfactual = self.attn(
+                    rnn_output.transpose(0, 1).contiguous(),
+                    memory_bank.transpose(0, 1),
+                    memory_lengths=memory_lengths,
+                    experiment_type='zero_out_max'
+                )
+
+                attns['zero_out_max'] = (p_attn_counterfactual, dec_outs_counterfactual)
+
+
+            elif counterfactual_attention_method is not None:
                 dec_outs_counterfactual, p_attn_counterfactual = self.attn(
                     rnn_output.transpose(0, 1).contiguous(),
                     memory_bank.transpose(0, 1),

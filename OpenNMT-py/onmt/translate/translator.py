@@ -204,7 +204,7 @@ class Translator(object):
         self.unaffected_function_words = defaultdict(int)
         self.unaffected_content_words = defaultdict(int)
 
-        self.counterfactual_attention_method = 'keep_max_uniform_others' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
+        self.counterfactual_attention_method = 'uniform_or_zero_out_max' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
 
     @classmethod
     def from_opt(
@@ -451,7 +451,7 @@ class Translator(object):
         print("Unaffected content words (top 50):   ")
         d = Counter(self.unaffected_content_words)
         for token,freq in d.most_common(n=50):
-            print("%s - total: %d - ratio of occurences: %f - ratio of total FWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / self.total_content_words))
+            print("%s - total: %d - ratio of occurences: %f - ratio of total CWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / self.total_content_words))
 
         #print("============ paper =================")
         #result = []
@@ -581,21 +581,42 @@ class Translator(object):
                 else:
                     self.total_content_words += 1
 
-            log_probs_counterfactual = hack_dict['log_probs_counterfactual']
-            top_prob_counterfactual = torch.topk(log_probs_counterfactual, k=1, dim=1)
-            unaffected_boolean = (top_prob.indices == top_prob_counterfactual.indices)
-            self.unaffected_words_count += unaffected_boolean.sum(dim=0).cpu().numpy()[0]
+            if self.counterfactual_attention_method == 'uniform_or_zero_out_max':
+                log_probs_uniform = hack_dict['log_probs_uniform']
+                top_prob_uniform = torch.topk(log_probs_uniform, k=1, dim=1)
+                unaffected_boolean_uniform = (top_prob.indices == top_prob_uniform.indices)
 
-            for i in range(unaffected_boolean.size()[0]):
-                if(unaffected_boolean[i][0].item() == 1):
-                    word = vocab.itos[top_prob.indices[i][0]]
+                log_probs_zero_out_max = hack_dict['log_probs_zero_out_max']
+                top_prob_zero_out_max = torch.topk(log_probs_zero_out_max, k=1, dim=1)
+                unaffected_boolean_zero_out_max = (top_prob.indices == top_prob_zero_out_max.indices)
 
-                    if is_function_word(word):
-                        self.unaffected_function_words_count += 1
-                        self.unaffected_function_words[word] += 1
-                    else:
-                        self.unaffected_content_words_count += 1
-                        self.unaffected_content_words[word] += 1
+                for i in range(unaffected_boolean_zero_out_max.size()[0]):
+                    if(unaffected_boolean_uniform[i][0].item() == 1 or unaffected_boolean_zero_out_max[i][0].item() == 1):
+                        word = vocab.itos[top_prob.indices[i][0]]
+
+                        if is_function_word(word):
+                            self.unaffected_function_words_count += 1
+                            self.unaffected_function_words[word] += 1
+                        else:
+                            self.unaffected_content_words_count += 1
+                            self.unaffected_content_words[word] += 1
+
+            else:
+                log_probs_counterfactual = hack_dict['log_probs_counterfactual']
+                top_prob_counterfactual = torch.topk(log_probs_counterfactual, k=1, dim=1)
+                unaffected_boolean = (top_prob.indices == top_prob_counterfactual.indices)
+                self.unaffected_words_count += unaffected_boolean.sum(dim=0).cpu().numpy()[0]
+
+                for i in range(unaffected_boolean.size()[0]):
+                    if(unaffected_boolean[i][0].item() == 1):
+                        word = vocab.itos[top_prob.indices[i][0]]
+
+                        if is_function_word(word):
+                            self.unaffected_function_words_count += 1
+                            self.unaffected_function_words[word] += 1
+                        else:
+                            self.unaffected_content_words_count += 1
+                            self.unaffected_content_words[word] += 1
 
 
             #if tvd_permute is True:
@@ -723,7 +744,13 @@ class Translator(object):
 
             log_probs = self.model.generator(dec_out.squeeze(0))
 
-            if self.counterfactual_attention_method is not None:
+            if self.counterfactual_attention_method == 'uniform_or_zero_out_max':
+                hack_dict['log_probs_uniform'] = self.model.generator(dec_attn['uniform'][1].squeeze(0))
+                hack_dict['attention_matrix_uniform'] = dec_attn['uniform'][0]
+                hack_dict['log_probs_zero_out_max'] = self.model.generator(dec_attn['zero_out_max'][1].squeeze(0))
+                hack_dict['attention_matrix_zero_out_max'] = dec_attn['zero_out_max'][0]
+
+            elif self.counterfactual_attention_method is not None:
                 hack_dict['log_probs_counterfactual'] = self.model.generator(dec_attn[self.counterfactual_attention_method][1].squeeze(0))
                 hack_dict['attention_matrix'] = dec_attn[self.counterfactual_attention_method][0]
 
