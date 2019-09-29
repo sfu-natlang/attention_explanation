@@ -204,7 +204,7 @@ class Translator(object):
         self.unaffected_function_words = defaultdict(int)
         self.unaffected_content_words = defaultdict(int)
 
-        self.counterfactual_attention_method = 'uniform_or_zero_out_max' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
+        self.counterfactual_attention_method = 'last_state' # permute, zero_out, uniform, zero_out_max, last_state, only_max, keep_max_uniform_others,
 
     @classmethod
     def from_opt(
@@ -453,25 +453,36 @@ class Translator(object):
         for token,freq in d.most_common(n=50):
             print("%s - total: %d - ratio of occurences: %f - ratio of total CWs: %f" % (token, freq, float(freq) / self.vocab_dict[token], float(freq) / self.total_content_words))
 
+
+
+        #my_dict = {}
+        #for token,freq in self.unaffected_function_words.items():
+        #    if self.vocab_dict[token] > 20:
+        #        my_dict[token] = float(freq) / self.vocab_dict[token]
+
         #print("============ paper =================")
         #result = []
-
         #print("Unaffected function words (top 50):   ")
         #d = Counter(self.unaffected_function_words)
         #for token,freq in d.most_common(n=50):
-        #    result.append((token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_FUNCTION))
-
-        #print(result)
-
-        #result = []
-        #print("Unaffected content words (top 50):   ")
-        #d = Counter(self.unaffected_content_words)
-        #for token,freq in d.most_common(n=50):
-        #    result.append((token, freq, float(freq) / self.vocab_dict[token], float(freq) / TOTAL_CONTENT))
+        #    result.append((token, freq, float(freq) / self.total_function_words, float(freq) / self.vocab_dict[token]))
 
         #print(result)
 
         #print("============== paper end ================")
+
+        #print("============ paper =================")
+        #result = []
+
+        #print("Unaffected function words (top 50):   ")
+        #d = Counter(my_dict)
+        #for token,coverage in d.most_common(n=50):
+        #    result.append((token, coverage, self.vocab_dict[token]))
+
+        #print(result)
+
+        #print("============== paper end ================")
+
 
 
         #if tvd_permute is True:
